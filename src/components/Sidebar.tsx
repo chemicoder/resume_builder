@@ -1,18 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ResumeData } from '../types';
-import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link } from 'lucide-react';
+import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy } from 'lucide-react';
 import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI } from '../lib/gemini';
+import { QRCodeSVG } from 'qrcode.react';
+import LZString from 'lz-string';
+
+import * as mammoth from 'mammoth';
 
 interface SidebarProps {
   data: ResumeData;
   onChange: (data: ResumeData) => void;
+  template: string;
 }
 
-export default function Sidebar({ data, onChange }: SidebarProps) {
+function stripEmpty(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(stripEmpty).filter(val => val !== null && val !== undefined && val !== '');
+  } else if (typeof obj === 'object' && obj !== null) {
+    const newObj: any = {};
+    for (const key in obj) {
+      const val = stripEmpty(obj[key]);
+      if (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.length === 0) && !(typeof val === 'object' && Object.keys(val).length === 0)) {
+        newObj[key] = val;
+      }
+    }
+    return newObj;
+  }
+  return obj;
+}
+
+export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [isParsing, setIsParsing] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [generatingProjectIndex, setGeneratingProjectIndex] = useState<number | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
+  const [showQR, setShowQR] = useState(false);
+
+  const shareUrl = useMemo(() => {
+    const dataToShare = { ...data };
+    if (dataToShare.personalInfo) {
+      dataToShare.personalInfo = { ...dataToShare.personalInfo };
+      delete dataToShare.personalInfo.profilePicture;
+    }
+    const strippedData = stripEmpty(dataToShare);
+    const payload = { data: strippedData, template };
+    const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+    return `${window.location.origin}${window.location.pathname}#${compressed}`;
+  }, [data, template]);
 
   const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     onChange({
@@ -56,27 +90,55 @@ export default function Sidebar({ data, onChange }: SidebarProps) {
   };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     
     setIsParsing(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const parsedData = await parseDocumentAI(data, { base64, mimeType: file.type });
-        // Preserve profile picture if it exists and wasn't updated
-        if (data.personalInfo.profilePicture && !parsedData.personalInfo.profilePicture) {
-          parsedData.personalInfo.profilePicture = data.personalInfo.profilePicture;
+      const filePromises = files.map(async file => {
+        if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+          try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            const blob = new Blob([result.value], { type: 'text/plain' });
+            return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64 = (reader.result as string).split(',')[1];
+                resolve({ base64, mimeType: 'text/plain' });
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.error("Failed to parse DOCX", e);
+            throw e;
+          }
         }
-        onChange(parsedData);
-        setIsParsing(false);
-      };
-      reader.readAsDataURL(file);
+        return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve({ base64, mimeType: file.type });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      });
+      
+      const processedFiles = await Promise.all(filePromises);
+      const parsedData = await parseDocumentAI(data, processedFiles);
+      
+      // Preserve profile picture if it exists and wasn't updated
+      if (data.personalInfo.profilePicture && !parsedData.personalInfo.profilePicture) {
+        parsedData.personalInfo.profilePicture = data.personalInfo.profilePicture;
+      }
+      onChange(parsedData);
     } catch (error) {
-      console.error("Failed to parse document", error);
+      console.error("Failed to parse documents", error);
+      alert("Failed to parse documents. Please try again.");
+    } finally {
       setIsParsing(false);
-      alert("Failed to parse document. Please try again.");
     }
   };
 
@@ -133,19 +195,59 @@ export default function Sidebar({ data, onChange }: SidebarProps) {
   return (
     <div className="w-full md:w-[450px] h-full overflow-y-auto bg-white border-r border-gray-200 p-6 space-y-8">
       
+      {/* Share Section */}
+      <section className="bg-purple-50 p-4 rounded-lg border border-purple-100 flex flex-col items-center">
+        <div className="flex items-center gap-2 mb-3 text-purple-800 font-semibold w-full">
+          <Share2 size={18} />
+          <h3>Share Resume</h3>
+        </div>
+        {!showQR ? (
+          <button
+            onClick={() => setShowQR(true)}
+            className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white py-2 rounded hover:bg-purple-700 transition-colors text-sm font-medium mb-2"
+          >
+            <Share2 size={14} />
+            Generate Share Link & QR Code
+          </button>
+        ) : (
+          <>
+            {shareUrl.length <= 2900 ? (
+              <div className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm mb-3 w-full flex justify-center">
+                <QRCodeSVG value={shareUrl} size={200} level="L" />
+              </div>
+            ) : (
+              <div className="bg-white p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-sm shadow-sm mb-3 w-full text-center">
+                Resume data is too large for a QR code. Please use the copy link button below.
+              </div>
+            )}
+            <p className="text-xs text-purple-600 mb-3 text-center">Scan to open this exact resume on any device.</p>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(shareUrl);
+                alert('Link copied to clipboard!');
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-white border border-purple-200 text-purple-700 py-2 rounded hover:bg-purple-100 transition-colors text-sm font-medium"
+            >
+              <Copy size={14} />
+              Copy Share Link
+            </button>
+          </>
+        )}
+      </section>
+
       {/* Import Section */}
       <section className="bg-blue-50 p-4 rounded-lg border border-blue-100">
         <div className="flex items-center gap-2 mb-2 text-blue-800 font-semibold">
           <FileText size={18} />
-          <h3>Import Existing Resume</h3>
+          <h3>Smart Import</h3>
         </div>
-        <p className="text-xs text-blue-600 mb-3">Upload a PDF or Image of your resume, degree, transcript, or provide a link to auto-fill the form using AI.</p>
+        <p className="text-xs text-blue-600 mb-3">Upload multiple PDFs or Images (resumes, transcripts, certificates) or provide a link to auto-fill the form using AI.</p>
         
         <div className="space-y-3">
           <label className="flex items-center justify-center gap-2 w-full bg-white border border-blue-200 text-blue-600 py-2 rounded cursor-pointer hover:bg-blue-50 transition-colors">
             {isParsing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            <span className="text-sm font-medium">{isParsing ? 'Parsing Document...' : 'Upload PDF / Image'}</span>
-            <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleResumeUpload} disabled={isParsing} />
+            <span className="text-sm font-medium">{isParsing ? 'Parsing Documents...' : 'Upload Documents'}</span>
+            <input type="file" multiple accept="application/pdf,image/*,.doc,.docx,.txt" className="hidden" onChange={handleResumeUpload} disabled={isParsing} />
           </label>
 
           <div className="flex gap-2">

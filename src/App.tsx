@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { initialData } from './data/initialState';
 import { ResumeData } from './types';
 import Sidebar from './components/Sidebar';
@@ -10,12 +10,11 @@ import HarvardResume from './components/templates/HarvardResume';
 import EngineersAustraliaResume from './components/templates/EngineersAustraliaResume';
 import CreativePortfolio from './components/templates/CreativePortfolio';
 import DeveloperPortfolio from './components/templates/DeveloperPortfolio';
-import { Printer, LayoutTemplate, Download, FileText, Undo, Redo } from 'lucide-react';
+import { Printer, LayoutTemplate, Download, Undo, Redo } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { asBlob } from 'html-docx-js-typescript';
-import { saveAs } from 'file-saver';
-// @ts-ignore
-import html2pdf from 'html2pdf.js';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
+import LZString from 'lz-string';
 
 type TemplateType = 'minimal' | 'modern' | 'portfolio' | 'europass' | 'harvard' | 'engineersaustralia' | 'creative' | 'developer';
 
@@ -25,6 +24,42 @@ export default function App() {
   const [future, setFuture] = useState<ResumeData[]>([]);
   const [template, setTemplate] = useState<TemplateType>('minimal');
   const componentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      try {
+        const decoded = LZString.decompressFromEncodedURIComponent(hash);
+        if (decoded) {
+          const parsed = JSON.parse(decoded);
+          if (parsed.data && parsed.template) {
+            setData({
+              ...initialData,
+              ...parsed.data,
+              personalInfo: { ...initialData.personalInfo, ...(parsed.data.personalInfo || {}) },
+              experience: parsed.data.experience || [],
+              education: parsed.data.education || [],
+              skills: parsed.data.skills || [],
+              projects: parsed.data.projects || []
+            });
+            setTemplate(parsed.template as TemplateType);
+          } else {
+            setData({
+              ...initialData,
+              ...parsed,
+              personalInfo: { ...initialData.personalInfo, ...(parsed.personalInfo || {}) },
+              experience: parsed.experience || [],
+              education: parsed.education || [],
+              skills: parsed.skills || [],
+              projects: parsed.projects || []
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse resume from URL", e);
+      }
+    }
+  }, []);
 
   const handleDataChange = (newData: ResumeData) => {
     setPast(prev => [...prev, data]);
@@ -50,117 +85,56 @@ export default function App() {
     setFuture(newFuture);
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!componentRef.current) return;
     
     const element = componentRef.current;
-    const opt = {
-      margin:       0,
-      filename:     `${data.personalInfo.fullName.replace(/\s+/g, '_')}_Resume.pdf`,
-      image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in' as const, format: 'a4', orientation: 'portrait' as const }
-    };
-    
-    html2pdf().set(opt).from(element).save();
-  };
-
-  const handleExportDocx = async () => {
-    if (!componentRef.current) return;
-    
-    const primaryColor = data.theme?.primary || '#2563eb';
-    const accentColor = data.theme?.accent || '#3b82f6';
-
-    const htmlString = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Resume</title>
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; line-height: 1.5; font-size: 11pt; }
-            h1 { font-size: 24pt; font-weight: bold; text-transform: uppercase; margin-bottom: 4pt; color: ${primaryColor}; }
-            h2 { font-size: 14pt; margin-bottom: 12pt; color: ${accentColor}; }
-            h3 { font-size: 12pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid ${primaryColor}; color: ${primaryColor}; padding-bottom: 2pt; margin-top: 16pt; margin-bottom: 8pt; }
-            h4 { font-size: 11pt; font-weight: bold; margin: 0; color: ${accentColor}; }
-            p { margin: 0 0 8pt 0; }
-            .contact-info { font-size: 10pt; color: #555; margin-bottom: 16pt; }
-            .job-meta { font-size: 10pt; color: #666; font-style: italic; }
-            .job-company { font-size: 10pt; font-weight: bold; color: #333; }
-            ul { margin-top: 4pt; margin-bottom: 8pt; padding-left: 20pt; }
-            li { font-size: 10pt; margin-bottom: 2pt; }
-            .tech { font-size: 9pt; color: #666; font-style: italic; }
-          </style>
-        </head>
-        <body>
-          <h1>${data.personalInfo.fullName}</h1>
-          <h2>${data.personalInfo.jobTitle}</h2>
-          <div class="contact-info">
-            ${data.personalInfo.email ? `Email: ${data.personalInfo.email} | ` : ''}
-            ${data.personalInfo.phone ? `Phone: ${data.personalInfo.phone} | ` : ''}
-            ${data.personalInfo.location ? `Location: ${data.personalInfo.location}` : ''}
-            <br/>
-            ${data.personalInfo.website ? `Website: ${data.personalInfo.website} | ` : ''}
-            ${data.personalInfo.linkedin ? `LinkedIn: ${data.personalInfo.linkedin} | ` : ''}
-            ${data.personalInfo.github ? `GitHub: ${data.personalInfo.github}` : ''}
-          </div>
-
-          ${data.personalInfo.summary ? `
-            <h3>Summary</h3>
-            <p>${data.personalInfo.summary}</p>
-          ` : ''}
-
-          ${data.experience.length > 0 ? `
-            <h3>Experience</h3>
-            ${data.experience.map(exp => `
-              <div>
-                <h4>${exp.role}</h4>
-                <p><span class="job-company">${exp.company}</span> | <span class="job-meta">${exp.startDate} - ${exp.endDate}</span></p>
-                <ul>
-                  ${exp.description.split('\n').filter(l => l.trim()).map(l => `<li>${l.replace(/^[•\-\*]\s*/, '')}</li>`).join('')}
-                </ul>
-              </div>
-            `).join('')}
-          ` : ''}
-
-          ${data.projects.length > 0 ? `
-            <h3>Projects</h3>
-            ${data.projects.map(proj => `
-              <div>
-                <h4>${proj.name} ${proj.link ? `(${proj.link})` : ''}</h4>
-                <p>${proj.description}</p>
-                ${proj.technologies.length > 0 ? `<p class="tech">Technologies: ${proj.technologies.join(', ')}</p>` : ''}
-              </div>
-            `).join('')}
-          ` : ''}
-
-          ${data.education.length > 0 ? `
-            <h3>Education</h3>
-            ${data.education.map(edu => `
-              <div>
-                <h4>${edu.degree}</h4>
-                <p><span class="job-company">${edu.institution}</span> | <span class="job-meta">${edu.startDate} - ${edu.endDate}</span></p>
-                <p>${edu.description}</p>
-              </div>
-            `).join('')}
-          ` : ''}
-
-          ${data.skills.length > 0 ? `
-            <h3>Skills</h3>
-            <p>${data.skills.join(' • ')}</p>
-          ` : ''}
-        </body>
-      </html>
-    `;
     
     try {
-      const result = await asBlob(htmlString);
-      const blob = result instanceof Blob ? result : new Blob([result], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      saveAs(blob, `${data.personalInfo.fullName.replace(/\s+/g, '_')}_Resume.docx`);
+      // html-to-image handles modern CSS (like oklch) much better than html2canvas
+      const dataUrl = await toPng(element, { 
+        quality: 0.98, 
+        pixelRatio: 2,
+        // Ensure background is white
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        style: {
+          transform: 'none',
+          margin: '0'
+        }
+      });
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+      
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+      
+      pdf.save(`${data.personalInfo.fullName.replace(/\s+/g, '_')}_Resume.pdf`);
     } catch (error) {
-      console.error('Failed to export DOCX:', error);
-      const fallbackBlob = new Blob(['\ufeff', htmlString], { type: 'application/msword' });
-      saveAs(fallbackBlob, `${data.personalInfo.fullName.replace(/\s+/g, '_')}_Resume.doc`);
+      console.error('Failed to generate PDF', error);
+      // Fallback
+      window.print();
     }
   };
 
@@ -191,7 +165,7 @@ export default function App() {
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans print:h-auto print:overflow-visible print:bg-white">
       {/* Sidebar - Form */}
       <div className="print:hidden h-full">
-        <Sidebar data={data} onChange={handleDataChange} />
+        <Sidebar data={data} onChange={handleDataChange} template={template} />
       </div>
 
       {/* Main Content - Preview */}
@@ -291,13 +265,6 @@ export default function App() {
               </button>
             </div>
             
-            <button
-              onClick={handleExportDocx}
-              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
-            >
-              <FileText size={18} />
-              Export DOCX
-            </button>
             <button
               onClick={handleExportPdf}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-sm"

@@ -21,36 +21,44 @@ export async function generateProjectDescriptionAI(name: string, tech: string[])
   return response.text;
 }
 
-export async function parseDocumentAI(currentData: ResumeData, file?: { base64: string, mimeType: string }, url?: string): Promise<ResumeData> {
+export async function parseDocumentAI(currentData: ResumeData, files?: { base64: string, mimeType: string }[], url?: string): Promise<ResumeData> {
+  const dataForPrompt = { ...currentData };
+  if (dataForPrompt.personalInfo) {
+    dataForPrompt.personalInfo = { ...dataForPrompt.personalInfo };
+    delete dataForPrompt.personalInfo.profilePicture;
+  }
+
   const prompt = `You are an AI assistant that extracts information from various documents (resumes, degrees, transcripts, certificates, job letters, passports, etc.) or web profiles to build a comprehensive resume/portfolio profile.
   
 Here is the user's current profile data in JSON format:
-${JSON.stringify(currentData)}
+${JSON.stringify(dataForPrompt)}
 
-Extract any relevant new information from the provided document/link and return a COMPLETE, UPDATED structured JSON object.
+Extract any relevant new information from the provided document(s)/link and return a COMPLETE, UPDATED structured JSON object.
 - If the document contains new experience, education, skills, or projects, APPEND them to the existing arrays.
 - If the document contains personal information that is currently missing or more accurate, UPDATE those fields.
 - DO NOT remove existing information unless it is clearly contradicted and superseded by the new document.
 - Generate unique string IDs for any new array items.
 - Return the complete, updated structured JSON object matching the schema.`;
 
-  const contents: any[] = [prompt];
+  const parts: any[] = [{ text: prompt }];
   
-  if (file) {
-    contents.push({
-      inlineData: {
-        data: file.base64,
-        mimeType: file.mimeType,
-      }
+  if (files && files.length > 0) {
+    files.forEach(file => {
+      parts.push({
+        inlineData: {
+          data: file.base64,
+          mimeType: file.mimeType,
+        }
+      });
     });
   }
   if (url) {
-    contents.push(`Extract information from this link: ${url}`);
+    parts.push({ text: `Extract information from this link: ${url}` });
   }
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: contents,
+    contents: { parts },
     config: {
       tools: url ? [{ googleSearch: {} }] : undefined,
       responseMimeType: "application/json",
@@ -68,10 +76,8 @@ Extract any relevant new information from the provided document/link and return 
               summary: { type: Type.STRING },
               website: { type: Type.STRING },
               linkedin: { type: Type.STRING },
-              github: { type: Type.STRING },
-              profilePicture: { type: Type.STRING }
-            },
-            required: ["fullName", "jobTitle", "email", "phone", "location", "summary"]
+              github: { type: Type.STRING }
+            }
           },
           experience: {
             type: Type.ARRAY,
@@ -84,8 +90,7 @@ Extract any relevant new information from the provided document/link and return 
                 startDate: { type: Type.STRING },
                 endDate: { type: Type.STRING },
                 description: { type: Type.STRING }
-              },
-              required: ["id", "company", "role", "startDate", "endDate", "description"]
+              }
             }
           },
           education: {
@@ -99,8 +104,7 @@ Extract any relevant new information from the provided document/link and return 
                 startDate: { type: Type.STRING },
                 endDate: { type: Type.STRING },
                 description: { type: Type.STRING }
-              },
-              required: ["id", "institution", "degree", "startDate", "endDate", "description"]
+              }
             }
           },
           skills: {
@@ -120,15 +124,19 @@ Extract any relevant new information from the provided document/link and return 
                   type: Type.ARRAY,
                   items: { type: Type.STRING }
                 }
-              },
-              required: ["id", "name", "description", "technologies"]
+              }
             }
           }
-        },
-        required: ["personalInfo", "experience", "education", "skills", "projects"]
+        }
       }
     }
   });
   
-  return JSON.parse(response.text || "{}") as ResumeData;
+  try {
+    return JSON.parse(response.text || "{}") as ResumeData;
+  } catch (e) {
+    console.error("Failed to parse AI response as JSON", e);
+    console.log("Raw response:", response.text);
+    throw new Error("Failed to parse AI response. The document might be too large or complex.");
+  }
 }
