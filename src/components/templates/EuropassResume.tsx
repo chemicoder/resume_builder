@@ -1,0 +1,118 @@
+import React from 'react';
+import { ResumeData } from '../../types';
+import { Mail, Phone, MapPin, Globe, Linkedin, Github } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+
+export default function EuropassResume({ data }: { data: ResumeData }) {
+  const primaryColor = data.theme?.primary || '#004494';
+  const accentColor = data.theme?.accent || '#0056b3';
+
+  return (
+    <div className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] font-sans text-gray-800">
+      {/* Header */}
+      <header className="text-white p-8 flex items-center justify-between gap-6" style={{ backgroundColor: primaryColor }}>
+        <div className="flex items-center gap-6">
+          {data.personalInfo.profilePicture && (
+            <img src={data.personalInfo.profilePicture} alt="Profile" className="w-24 h-24 rounded-full border-2 border-white object-cover" />
+          )}
+          <div>
+            <h1 className="text-3xl font-bold mb-1">{data.personalInfo.fullName}</h1>
+            <h2 className="text-xl opacity-80">{data.personalInfo.jobTitle}</h2>
+          </div>
+        </div>
+        {data.showQrCode && data.qrCodeLink && (
+          <div className="bg-white p-2 rounded-lg">
+            <QRCodeSVG value={data.qrCodeLink} size={64} fgColor={data.theme.qrCodeColor || primaryColor} />
+          </div>
+        )}
+      </header>
+
+      <div className="p-8">
+        {/* Contact Info */}
+        <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+          <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Personal Info</div>
+          <div className="text-sm space-y-1">
+            {data.personalInfo.location && <div><span className="font-semibold">Address:</span> {data.personalInfo.location}</div>}
+            {data.personalInfo.email && <div><span className="font-semibold">Email:</span> {data.personalInfo.email}</div>}
+            {data.personalInfo.phone && <div><span className="font-semibold">Phone:</span> {data.personalInfo.phone}</div>}
+            {data.personalInfo.linkedin && <div><span className="font-semibold">LinkedIn:</span> {data.personalInfo.linkedin}</div>}
+            {data.personalInfo.github && <div><span className="font-semibold">GitHub:</span> {data.personalInfo.github}</div>}
+            {data.personalInfo.website && <div><span className="font-semibold">Website:</span> {data.personalInfo.website}</div>}
+          </div>
+        </div>
+
+        {/* Summary */}
+        {data.personalInfo.summary && (
+          <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+            <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Summary</div>
+            <div className="text-sm leading-relaxed">{data.personalInfo.summary}</div>
+          </div>
+        )}
+
+        {/* Work Experience */}
+        {data.experience.length > 0 && (
+          <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+            <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Work Experience</div>
+            <div className="space-y-4">
+              {data.experience.map((exp) => (
+                <div key={exp.id}>
+                  <div className="text-sm text-gray-500 mb-1">{exp.startDate} - {exp.endDate}</div>
+                  <h4 className="font-bold text-base">{exp.role}</h4>
+                  <div className="text-sm font-medium mb-1" style={{ color: accentColor }}>{exp.company}</div>
+                  <ul className="list-disc list-outside ml-4 space-y-1 text-sm leading-relaxed">
+                    {exp.description.split('\n').filter(line => line.trim()).map((line, i) => (
+                      <li key={i}>{line.replace(/^[•\-\*]\s*/, '')}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Education */}
+        {data.education.length > 0 && (
+          <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+            <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Education</div>
+            <div className="space-y-4">
+              {data.education.map((edu) => (
+                <div key={edu.id}>
+                  <div className="text-sm text-gray-500 mb-1">{edu.startDate} - {edu.endDate}</div>
+                  <h4 className="font-bold text-base">{edu.degree}</h4>
+                  <div className="text-sm font-medium mb-1" style={{ color: accentColor }}>{edu.institution}</div>
+                  <p className="text-sm leading-relaxed">{edu.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Projects */}
+        {data.projects.length > 0 && (
+          <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+            <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Projects</div>
+            <div className="space-y-4">
+              {data.projects.map((proj) => (
+                <div key={proj.id}>
+                  <h4 className="font-bold text-base">{proj.name} {proj.link && <span className="text-xs font-normal" style={{ color: accentColor }}>({proj.link})</span>}</h4>
+                  <p className="text-sm leading-relaxed mb-1">{proj.description}</p>
+                  <p className="text-xs text-gray-500 italic">Tech: {proj.technologies.join(', ')}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Skills */}
+        {data.skills.length > 0 && (
+          <div className="grid grid-cols-[1fr_3fr] gap-6 mb-6">
+            <div className="font-bold text-right uppercase text-sm pt-1" style={{ color: primaryColor }}>Skills</div>
+            <div className="text-sm leading-relaxed">
+              {data.skills.join(', ')}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
