@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ResumeData } from '../types';
 import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy, Target, BarChart2, Wand2 } from 'lucide-react';
-import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI, calculateATSScore, alignResumeToJob, ATSScoreResult } from '../lib/gemini';
+import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI, calculateATSScore, alignResumeToJob, ATSScoreResult, getStoredApiKey, setStoredApiKey } from '../lib/gemini';
 import { QRCodeSVG } from 'qrcode.react';
 import LZString from 'lz-string';
 
@@ -39,6 +39,22 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [isCalculatingATS, setIsCalculatingATS] = useState(false);
   const [jobInput, setJobInput] = useState('');
   const [isAligningResume, setIsAligningResume] = useState(false);
+  const [apiKey, setApiKey] = useState(() => getStoredApiKey());
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+
+  const handleSaveApiKey = () => {
+    setStoredApiKey(apiKey.trim());
+    setApiKey(apiKey.trim());
+    setShowApiKeyInput(false);
+  };
+
+  const requireApiKey = (): boolean => {
+    if (!getStoredApiKey()) {
+      setShowApiKeyInput(true);
+      return false;
+    }
+    return true;
+  };
 
   const shareUrl = useMemo(() => {
     const dataToShare = { ...data };
@@ -96,6 +112,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from<File>(e.target.files || []);
     if (files.length === 0) return;
+    if (!requireApiKey()) return;
     
     setIsParsing(true);
     try {
@@ -148,6 +165,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
   const handleUrlImport = async () => {
     if (!documentUrl) return;
+    if (!requireApiKey()) return;
     setIsParsing(true);
     try {
       const parsedData = await parseDocumentAI(data, undefined, documentUrl);
@@ -165,6 +183,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleGenerateSummary = async () => {
+    if (!requireApiKey()) return;
     setIsGeneratingSummary(true);
     try {
       const summary = await generateSummaryAI(data.personalInfo.jobTitle, data.skills, data.experience);
@@ -182,6 +201,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleGenerateProjectDesc = async (index: number) => {
+    if (!requireApiKey()) return;
     const proj = data.projects[index];
     setGeneratingProjectIndex(index);
     try {
@@ -197,6 +217,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleCalculateATS = async () => {
+    if (!requireApiKey()) return;
     setIsCalculatingATS(true);
     try {
       const result = await calculateATSScore(data, jobInput || undefined);
@@ -214,6 +235,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       alert("Please enter a job description or job URL first.");
       return;
     }
+    if (!requireApiKey()) return;
     setIsAligningResume(true);
     try {
       const result = await alignResumeToJob(data, jobInput);
@@ -236,6 +258,61 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
   return (
     <div className="w-full md:w-[450px] h-full overflow-y-auto bg-white border-r border-gray-200 p-6 space-y-8">
+
+      {/* Gemini API Key Section */}
+      <section className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 text-gray-700 font-semibold text-sm">
+            <Sparkles size={16} />
+            <span>Gemini AI Key</span>
+          </div>
+          <button
+            onClick={() => setShowApiKeyInput(v => !v)}
+            aria-label={getStoredApiKey() ? 'Change API key' : 'Open API key input form'}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            {getStoredApiKey() ? 'Change' : 'Set up'}
+          </button>
+        </div>
+        {!getStoredApiKey() && !showApiKeyInput && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+            A Gemini API key is required for AI features (Smart Import, ATS Score, AI suggestions). <button onClick={() => setShowApiKeyInput(true)} className="underline font-medium">Add your key</button> to enable them. Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline">aistudio.google.com</a>.
+          </p>
+        )}
+        {showApiKeyInput && (
+          <div className="space-y-2 mt-2">
+            <p className="text-xs text-gray-500">Your key is stored only in your browser's local storage and is never sent anywhere except directly to Google's API.</p>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="AIza..."
+              className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveApiKey}
+                disabled={!apiKey.trim()}
+                className="flex-1 bg-blue-600 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                Save Key
+              </button>
+              <button
+                onClick={() => setShowApiKeyInput(false)}
+                className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded text-sm hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {getStoredApiKey() && !showApiKeyInput && (
+          <p className="text-xs text-green-700 flex items-center gap-1">
+            <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+            API key configured
+          </p>
+        )}
+      </section>
 
       {/* Job Alignment Section */}
       <section className="bg-green-50 p-4 rounded-lg border border-green-100">
