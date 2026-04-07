@@ -6,7 +6,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export async function generateSummaryAI(jobTitle: string, skills: string[], experience: any[]) {
   const prompt = `Write a professional resume summary for a ${jobTitle}. Skills: ${skills.join(', ')}. Experience highlights: ${experience.map(e => e.role + ' at ' + e.company).join(', ')}. Keep it concise, impactful, and under 4 sentences.`;
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.0-flash',
     contents: prompt,
   });
   return response.text;
@@ -15,7 +15,7 @@ export async function generateSummaryAI(jobTitle: string, skills: string[], expe
 export async function generateProjectDescriptionAI(name: string, tech: string[]) {
   const prompt = `Write a professional resume project description for a project named "${name}" using technologies: ${tech.join(', ')}. Keep it concise, action-oriented, and under 3 sentences.`;
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.0-flash',
     contents: prompt,
   });
   return response.text;
@@ -57,7 +57,7 @@ Extract any relevant new information from the provided document(s)/link and retu
   }
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.0-flash',
     contents: { parts },
     config: {
       tools: url ? [{ googleSearch: {} }] : undefined,

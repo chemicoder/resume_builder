@@ -90,7 +90,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from<File>(e.target.files || []);
     if (files.length === 0) return;
     
     setIsParsing(true);
