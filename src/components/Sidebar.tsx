@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ResumeData } from '../types';
-import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy } from 'lucide-react';
-import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI } from '../lib/gemini';
+import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy, Target, BarChart2, Wand2 } from 'lucide-react';
+import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI, calculateATSScore, alignResumeToJob, ATSScoreResult } from '../lib/gemini';
 import { QRCodeSVG } from 'qrcode.react';
 import LZString from 'lz-string';
 
@@ -35,6 +35,10 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [generatingProjectIndex, setGeneratingProjectIndex] = useState<number | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
   const [showQR, setShowQR] = useState(false);
+  const [atsScore, setAtsScore] = useState<ATSScoreResult | null>(null);
+  const [isCalculatingATS, setIsCalculatingATS] = useState(false);
+  const [jobInput, setJobInput] = useState('');
+  const [isAligningResume, setIsAligningResume] = useState(false);
 
   const shareUrl = useMemo(() => {
     const dataToShare = { ...data };
@@ -90,7 +94,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from<File>(e.target.files || []);
     if (files.length === 0) return;
     
     setIsParsing(true);
@@ -192,9 +196,141 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     setGeneratingProjectIndex(null);
   };
 
+  const handleCalculateATS = async () => {
+    setIsCalculatingATS(true);
+    try {
+      const result = await calculateATSScore(data, jobInput || undefined);
+      setAtsScore(result);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to calculate ATS score. Please try again.");
+    } finally {
+      setIsCalculatingATS(false);
+    }
+  };
+
+  const handleAlignResume = async () => {
+    if (!jobInput.trim()) {
+      alert("Please enter a job description or job URL first.");
+      return;
+    }
+    setIsAligningResume(true);
+    try {
+      const result = await alignResumeToJob(data, jobInput);
+      const updatedExperience = data.experience.map(exp => {
+        const updated = result.experience?.find((e: { id: string; description: string }) => e.id === exp.id);
+        return updated ? { ...exp, description: updated.description } : exp;
+      });
+      onChange({
+        ...data,
+        personalInfo: { ...data.personalInfo, summary: result.summary || data.personalInfo.summary },
+        experience: updatedExperience,
+      });
+    } catch (error) {
+      console.error(error);
+      alert("Failed to align resume. Please try again.");
+    } finally {
+      setIsAligningResume(false);
+    }
+  };
+
   return (
     <div className="w-full md:w-[450px] h-full overflow-y-auto bg-white border-r border-gray-200 p-6 space-y-8">
-      
+
+      {/* Job Alignment Section */}
+      <section className="bg-green-50 p-4 rounded-lg border border-green-100">
+        <div className="flex items-center gap-2 mb-2 text-green-800 font-semibold">
+          <Wand2 size={18} />
+          <h3>Align Resume to Job</h3>
+        </div>
+        <p className="text-xs text-green-700 mb-3">Paste a job description or a job posting URL. AI will rewrite your summary and experience to match the role.</p>
+        <textarea
+          value={jobInput}
+          onChange={(e) => setJobInput(e.target.value)}
+          placeholder="Paste job description text or a job posting URL here…"
+          rows={5}
+          disabled={isAligningResume}
+          className="w-full p-2 text-sm border border-green-200 rounded focus:ring-2 focus:ring-green-500 outline-none resize-none mb-3"
+        />
+        <button
+          onClick={handleAlignResume}
+          disabled={isAligningResume || !jobInput.trim()}
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-medium"
+        >
+          {isAligningResume ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+          {isAligningResume ? 'Aligning Resume…' : 'Align Resume to Job'}
+        </button>
+      </section>
+
+      {/* ATS Score Section */}
+      <section className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+        <div className="flex items-center gap-2 mb-2 text-orange-800 font-semibold">
+          <Target size={18} />
+          <h3>ATS Score</h3>
+        </div>
+        <p className="text-xs text-orange-700 mb-3">
+          {jobInput.trim() ? 'Score is calculated against the job description above.' : 'Analyze your resume\'s ATS compatibility. Add a job description above for a targeted score.'}
+        </p>
+        {atsScore && (
+          <div className="mb-4">
+            {/* Overall score ring */}
+            <div className="flex items-center gap-4 mb-4">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shrink-0 ${atsScore.overall >= 75 ? 'bg-green-500' : atsScore.overall >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}>
+                {Math.round(atsScore.overall)}
+              </div>
+              <div>
+                <p className={`font-semibold text-sm ${atsScore.overall >= 75 ? 'text-green-700' : atsScore.overall >= 50 ? 'text-yellow-700' : 'text-red-700'}`}>
+                  {atsScore.overall >= 75 ? 'Good ATS Match' : atsScore.overall >= 50 ? 'Needs Improvement' : 'Poor ATS Match'}
+                </p>
+                <p className="text-xs text-gray-500">out of 100</p>
+              </div>
+            </div>
+            {/* Breakdown bars */}
+            <div className="space-y-2 mb-4">
+              {(Object.entries(atsScore.breakdown) as [string, number][]).map(([key, value]) => (
+                <div key={key}>
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-xs text-gray-600 capitalize">{key}</span>
+                    <span className="text-xs font-semibold text-gray-700">{Math.round(value)}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-500 ${value >= 75 ? 'bg-green-500' : value >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                      style={{ width: `${Math.min(100, Math.round(value))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Suggestions */}
+            {atsScore.suggestions.length > 0 && (
+              <div className="bg-white rounded-lg border border-orange-100 p-3">
+                <div className="flex items-center gap-1 mb-2 text-orange-700">
+                  <BarChart2 size={13} />
+                  <span className="text-xs font-semibold">Suggestions</span>
+                </div>
+                <ul className="space-y-1">
+                  {atsScore.suggestions.map((s, i) => (
+                    <li key={i} className="text-xs text-gray-600 flex gap-1.5">
+                      <span className="text-orange-400 shrink-0">•</span>
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        <button
+          onClick={handleCalculateATS}
+          disabled={isCalculatingATS}
+          className="w-full flex items-center justify-center gap-2 bg-orange-500 text-white py-2 rounded hover:bg-orange-600 disabled:opacity-50 transition-colors text-sm font-medium"
+        >
+          {isCalculatingATS ? <Loader2 size={16} className="animate-spin" /> : <Target size={16} />}
+          {isCalculatingATS ? 'Analyzing Resume…' : atsScore ? 'Re-analyze ATS Score' : 'Calculate ATS Score'}
+        </button>
+      </section>
+
       {/* Share Section */}
       <section className="bg-purple-50 p-4 rounded-lg border border-purple-100 flex flex-col items-center">
         <div className="flex items-center gap-2 mb-3 text-purple-800 font-semibold w-full">
