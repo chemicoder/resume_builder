@@ -13,11 +13,27 @@ export interface ATSScoreResult {
   suggestions: string[];
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const LOCAL_STORAGE_KEY = 'gemini_api_key';
+
+export function getStoredApiKey(): string {
+  return localStorage.getItem(LOCAL_STORAGE_KEY) || process.env.GEMINI_API_KEY || '';
+}
+
+export function setStoredApiKey(key: string): void {
+  localStorage.setItem(LOCAL_STORAGE_KEY, key);
+}
+
+function getAI(): GoogleGenAI {
+  const apiKey = getStoredApiKey();
+  if (!apiKey) {
+    throw new Error('NO_API_KEY');
+  }
+  return new GoogleGenAI({ apiKey });
+}
 
 export async function generateSummaryAI(jobTitle: string, skills: string[], experience: any[]) {
   const prompt = `Write a professional resume summary for a ${jobTitle}. Skills: ${skills.join(', ')}. Experience highlights: ${experience.map(e => e.role + ' at ' + e.company).join(', ')}. Keep it concise, impactful, and under 4 sentences.`;
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-2.0-flash',
     contents: prompt,
   });
@@ -26,7 +42,7 @@ export async function generateSummaryAI(jobTitle: string, skills: string[], expe
 
 export async function generateProjectDescriptionAI(name: string, tech: string[]) {
   const prompt = `Write a professional resume project description for a project named "${name}" using technologies: ${tech.join(', ')}. Keep it concise, action-oriented, and under 3 sentences.`;
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-2.0-flash',
     contents: prompt,
   });
@@ -68,7 +84,7 @@ Extract any relevant new information from the provided document(s)/link and retu
     parts.push({ text: `Extract information from this link: ${url}` });
   }
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-2.0-flash',
     contents: { parts },
     config: {
@@ -178,7 +194,7 @@ Calculate the overall score as a weighted average: completeness 20%, keywords 30
 
 Also provide 3-5 specific, actionable improvement suggestions targeting the weakest areas.`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-2.0-flash',
     contents: prompt,
     config: {
@@ -238,7 +254,7 @@ Tasks:
 
 Return a JSON object with the updated summary and the updated experience descriptions (keyed by their original IDs).`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-2.0-flash',
     contents: prompt,
     config: {
