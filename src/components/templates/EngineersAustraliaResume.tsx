@@ -129,7 +129,7 @@ export default function EngineersAustraliaResume({ data }: { data: ResumeData })
               <div key={proj.id} className="pl-[25%]">
                 <div className="font-bold mb-1">{proj.name} {proj.link && <span className="font-normal italic text-xs">({proj.link})</span>}</div>
                 <p className="mb-2">{proj.description}</p>
-                {proj.technologies.length > 0 && (
+                {(proj.technologies || []).length > 0 && (
                   <p className="text-xs italic">
                     <span className="font-semibold">Technologies used:</span> {proj.technologies.join(', ')}
                   </p>

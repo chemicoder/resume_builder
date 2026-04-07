@@ -59,7 +59,7 @@ export default function GridPortfolio({ data }: { data: ResumeData }) {
                 </div>
                 <p className="text-gray-600 mb-6 flex-grow">{proj.description}</p>
                 <div className="flex flex-wrap gap-2 mt-auto">
-                  {proj.technologies.map((tech, i) => (
+                  {(proj.technologies || []).map((tech, i) => (
                     <span key={i} className="text-xs font-medium px-3 py-1 rounded-full" style={{ color: primaryColor, backgroundColor: `${primaryColor}10` }}>
                       {tech}
                     </span>

@@ -127,9 +127,9 @@ export default function ModernResume({ data }: { data: ResumeData }) {
                     {proj.link && <a href={`https://${proj.link}`} target="_blank" rel="noreferrer" className="text-xs font-normal ml-2 hover:underline" style={{ color: accentColor }}>Link ↗</a>}
                   </h4>
                   <p className="text-sm leading-relaxed text-slate-600 mb-2">{proj.description}</p>
-                  {proj.technologies.length > 0 && (
+                  {(proj.technologies || []).length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {proj.technologies.map((tech, i) => (
+                      {(proj.technologies || []).map((tech, i) => (
                         <span key={i} className="text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
                           {tech}
                         </span>

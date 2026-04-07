@@ -93,7 +93,7 @@ export default function MinimalResume({ data }: { data: ResumeData }) {
                   </h4>
                 </div>
                 <p className="text-sm leading-relaxed mb-1">{proj.description}</p>
-                {proj.technologies.length > 0 && (
+                {(proj.technologies || []).length > 0 && (
                   <p className="text-xs text-gray-600 italic">Technologies: {proj.technologies.join(', ')}</p>
                 )}
               </div>

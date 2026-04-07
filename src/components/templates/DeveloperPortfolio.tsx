@@ -94,9 +94,9 @@ export default function DeveloperPortfolio({ data }: { data: ResumeData }) {
                     )}
                   </div>
                   <p className="text-sm text-slate-400 mb-4">{proj.description}</p>
-                  {proj.technologies.length > 0 && (
+                  {(proj.technologies || []).length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {proj.technologies.map((tech, i) => (
+                      {(proj.technologies || []).map((tech, i) => (
                         <span key={i} className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-slate-900 border border-slate-700 rounded text-slate-400">
                           {tech}
                         </span>

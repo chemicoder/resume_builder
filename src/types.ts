@@ -43,6 +43,11 @@ export interface Theme {
   qrCodeColor?: string;
 }
 
+export interface TargetJob {
+  description: string;
+  url?: string;
+}
+
 export interface ResumeData {
   personalInfo: PersonalInfo;
   experience: Experience[];
@@ -52,4 +57,6 @@ export interface ResumeData {
   theme: Theme;
   showQrCode: boolean;
   qrCodeLink: string;
+  atsScore?: number;
+  targetJob?: TargetJob;
 }

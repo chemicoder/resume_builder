@@ -61,9 +61,9 @@ export default function CreativePortfolio({ data }: { data: ResumeData }) {
                 <div key={proj.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
                   <h4 className="text-xl font-bold mb-2 text-gray-900">{proj.name}</h4>
                   <p className="text-gray-600 text-sm mb-4 line-clamp-3">{proj.description}</p>
-                  {proj.technologies.length > 0 && (
+                  {(proj.technologies || []).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {proj.technologies.map((tech, i) => (
+                      {(proj.technologies || []).map((tech, i) => (
                         <span key={i} className="text-xs px-2 py-1 rounded-md font-medium" style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}>
                           {tech}
                         </span>
