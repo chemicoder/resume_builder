@@ -52,7 +52,7 @@ export async function generateSummaryAI(jobTitle: string, skills: string[], expe
   const prompt = `Write a professional resume summary for a ${jobTitle}. Skills: ${skills.join(', ')}. Experience highlights: ${experience.map(e => e.role + ' at ' + e.company).join(', ')}. Keep it concise, impactful, and under 4 sentences.`;
   const ai = getAiClient();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.5-flash',
     contents: prompt,
   });
   return response.text;
@@ -66,7 +66,7 @@ export async function generateProjectDescriptionAI(name: string, tech: string[])
   const prompt = `Write a professional resume project description for a project named "${name}" using technologies: ${tech.join(', ')}. Keep it concise, action-oriented, and under 3 sentences.`;
   const ai = getAiClient();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.5-flash',
     contents: prompt,
   });
   return response.text;
@@ -109,7 +109,7 @@ Extract any relevant new information from the provided document(s)/link and retu
   }
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
+    model: 'gemini-2.5-pro',
     contents: { parts },
     config: {
       tools: url ? [{ googleSearch: {} }] : undefined,
@@ -224,7 +224,7 @@ Your task:
   const parts: any[] = [{ text: prompt }];
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
+    model: 'gemini-2.5-pro',
     contents: { parts },
     config: {
       tools: jobUrl ? [{ googleSearch: {} }] : undefined,

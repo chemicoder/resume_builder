@@ -3,13 +3,15 @@ import {
   BorderStyle,
   Document,
   Packer,
+  PageOrientation,
   Paragraph,
   ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
-  VerticalAlign,
+  VerticalAlignTable,
   WidthType,
   convertInchesToTwip,
 } from 'docx';
@@ -20,487 +22,1288 @@ import { getResumeFileBaseName } from './fileNames';
 type DocxTemplate = 'minimal' | 'modern' | 'portfolio' | 'europass' | 'harvard' | 'engineersaustralia' | 'creative' | 'developer';
 type DocxNode = Paragraph | Table;
 
-interface TemplateContext {
-  data: ResumeData;
+interface PaletteColors {
   primary: string;
   accent: string;
   font: string;
+  bodyFont: string;
 }
 
-const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
-const noBorders = {
-  top: noBorder,
-  bottom: noBorder,
-  left: noBorder,
-  right: noBorder,
-  insideHorizontal: noBorder,
-  insideVertical: noBorder,
+interface BuildContext {
+  data: ResumeData;
+  template: DocxTemplate;
+  palette: PaletteColors;
+}
+
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+const ALL_NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+  insideHorizontal: NO_BORDER,
+  insideVertical: NO_BORDER,
 };
 
-function hexColor(color?: string, fallback = '2563EB') {
+function hex(color: string | undefined, fallback: string): string {
   const value = (color || fallback).replace('#', '').trim();
-  return /^[0-9a-fA-F]{6}$/.test(value) ? value.toUpperCase() : fallback;
+  return /^[0-9a-fA-F]{6}$/.test(value) ? value.toUpperCase() : fallback.toUpperCase();
 }
 
-function tint(color: string, fallback: string) {
-  return color === '000000' ? fallback : color;
-}
-
-function lines(description?: string) {
+function splitLines(description?: string): string[] {
   return (description || '')
     .split(/\r?\n/)
-    .map((line) => line.replace(/^[\u2022\-*]\s*/, '').trim())
+    .map((line) => line.replace(/^[•\-*]\s*/, '').trim())
     .filter(Boolean);
 }
 
-function text(value: string, options: {
+interface RunOpts {
   bold?: boolean;
   italics?: boolean;
   color?: string;
   size?: number;
   font?: string;
   allCaps?: boolean;
-} = {}) {
+  underline?: boolean;
+  highlight?: string;
+}
+
+function run(value: string, opts: RunOpts = {}): TextRun {
   return new TextRun({
-    text: options.allCaps ? value.toUpperCase() : value,
-    bold: options.bold,
-    italics: options.italics,
-    color: options.color,
-    size: options.size,
-    font: options.font,
+    text: opts.allCaps ? value.toUpperCase() : value,
+    bold: opts.bold,
+    italics: opts.italics,
+    color: opts.color,
+    size: opts.size,
+    font: opts.font,
+    underline: opts.underline ? {} : undefined,
   });
 }
 
-function para(children: Array<TextRun | string>, options: {
+interface ParaOpts {
   align?: keyof typeof AlignmentType;
   before?: number;
   after?: number;
-  spacing?: number;
-} = {}) {
+  line?: number;
+  shading?: string;
+  indent?: { left?: number; right?: number; firstLine?: number; hanging?: number };
+  border?: { bottom?: { color: string; size?: number }; top?: { color: string; size?: number }; left?: { color: string; size?: number } };
+  keepNext?: boolean;
+  keepLines?: boolean;
+}
+
+function paragraph(children: Array<TextRun | string>, opts: ParaOpts = {}): Paragraph {
   return new Paragraph({
-    alignment: options.align ? AlignmentType[options.align] : undefined,
-    spacing: {
-      before: options.before ?? 0,
-      after: options.after ?? 90,
-      line: options.spacing ?? 260,
-    },
-    children: children.map((child) => (typeof child === 'string' ? text(child) : child)),
+    alignment: opts.align ? AlignmentType[opts.align] : undefined,
+    spacing: { before: opts.before ?? 0, after: opts.after ?? 80, line: opts.line ?? 260 },
+    indent: opts.indent,
+    shading: opts.shading ? { type: ShadingType.CLEAR, fill: opts.shading } : undefined,
+    keepNext: opts.keepNext,
+    keepLines: opts.keepLines,
+    border: opts.border ? {
+      bottom: opts.border.bottom ? { style: BorderStyle.SINGLE, size: opts.border.bottom.size ?? 6, color: opts.border.bottom.color, space: 2 } : undefined,
+      top: opts.border.top ? { style: BorderStyle.SINGLE, size: opts.border.top.size ?? 6, color: opts.border.top.color, space: 2 } : undefined,
+      left: opts.border.left ? { style: BorderStyle.SINGLE, size: opts.border.left.size ?? 6, color: opts.border.left.color, space: 4 } : undefined,
+    } : undefined,
+    children: children.map((c) => (typeof c === 'string' ? run(c) : c)),
   });
 }
 
-function bullet(value: string, ctx: TemplateContext, color = '1F2937') {
-  return new Paragraph({
-    bullet: { level: 0 },
-    spacing: { after: 55, line: 250 },
-    children: [text(value, { size: 20, color, font: ctx.font })],
-  });
-}
-
-function sectionHeading(label: string, ctx: TemplateContext, options: { compact?: boolean; color?: string; border?: boolean } = {}) {
-  const color = options.color || ctx.primary;
-  return new Paragraph({
-    spacing: { before: options.compact ? 160 : 260, after: 110 },
-    border: options.border === false ? undefined : {
-      bottom: { style: BorderStyle.SINGLE, size: 8, color, space: 2 },
-    },
-    children: [text(label, { bold: true, color, size: options.compact ? 22 : 24, font: ctx.font, allCaps: true })],
-  });
-}
-
-function contactItems(data: ResumeData) {
-  const info = data.personalInfo;
-  return [
-    info.email,
-    info.phone,
-    info.location,
-    info.website,
-    info.linkedin,
-    info.github,
-  ].filter(Boolean) as string[];
-}
-
-function cell(children: DocxNode[], options: {
+interface CellOpts {
   width?: number;
   fill?: string;
-  margins?: number;
-} = {}) {
+  margins?: { top?: number; bottom?: number; left?: number; right?: number };
+  borders?: 'none' | 'all' | { left?: string; right?: string; top?: string; bottom?: string };
+  verticalAlign?: 'top' | 'center' | 'bottom';
+  colSpan?: number;
+}
+
+function tableCell(children: DocxNode[], opts: CellOpts = {}): TableCell {
+  let borders;
+  if (!opts.borders || opts.borders === 'none') {
+    borders = ALL_NO_BORDERS;
+  } else if (opts.borders === 'all') {
+    borders = undefined;
+  } else {
+    const b = opts.borders;
+    const make = (color?: string) => color ? { style: BorderStyle.SINGLE, size: 4, color } : NO_BORDER;
+    borders = {
+      top: make(b.top),
+      bottom: make(b.bottom),
+      left: make(b.left),
+      right: make(b.right),
+    };
+  }
+
   return new TableCell({
-    width: options.width ? { size: options.width, type: WidthType.PERCENTAGE } : undefined,
-    shading: options.fill ? { type: ShadingType.CLEAR, fill: options.fill } : undefined,
+    width: opts.width !== undefined ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+    shading: opts.fill ? { type: ShadingType.CLEAR, fill: opts.fill } : undefined,
     margins: {
-      top: options.margins ?? 120,
-      bottom: options.margins ?? 120,
-      left: options.margins ?? 160,
-      right: options.margins ?? 160,
+      top: opts.margins?.top ?? 120,
+      bottom: opts.margins?.bottom ?? 120,
+      left: opts.margins?.left ?? 160,
+      right: opts.margins?.right ?? 160,
     },
-    verticalAlign: VerticalAlign.TOP,
-    children: children.length ? children : [para([''])],
+    verticalAlign: (opts.verticalAlign ?? 'top') as typeof VerticalAlignTable[keyof typeof VerticalAlignTable],
+    borders,
+    columnSpan: opts.colSpan,
+    children: children.length ? children : [paragraph([''])],
   });
 }
 
-function table(rows: TableRow[], width = 100) {
+function fullTable(rows: TableRow[], widthPct = 100): Table {
   return new Table({
-    width: { size: width, type: WidthType.PERCENTAGE },
-    borders: noBorders,
+    width: { size: widthPct, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    borders: ALL_NO_BORDERS,
     rows,
   });
 }
 
-function datedLine(title: string, date: string, ctx: TemplateContext, options: { companyFirst?: boolean; serif?: boolean } = {}) {
-  return table([
-    new TableRow({
-      children: [
-        cell([
-          para([text(title, { bold: true, color: options.companyFirst ? '111827' : ctx.accent, size: 21, font: ctx.font })], { after: 20 }),
-        ], { width: 68, margins: 0 }),
-        cell([
-          para([text(date, { color: '4B5563', size: 19, font: ctx.font })], { align: 'RIGHT', after: 20 }),
-        ], { width: 32, margins: 0 }),
-      ],
-    }),
-  ]);
+function contactItems(data: ResumeData): string[] {
+  const i = data.personalInfo;
+  return [i.email, i.phone, i.location, i.website, i.linkedin, i.github].filter(Boolean) as string[];
 }
 
-function experienceBlocks(ctx: TemplateContext, mode: 'role-first' | 'company-first' = 'role-first') {
-  return ctx.data.experience.flatMap((exp) => {
-    const title = mode === 'company-first' ? exp.company : exp.role;
-    const subtitle = mode === 'company-first' ? exp.role : exp.company;
-    return [
-      datedLine(title, [exp.startDate, exp.endDate].filter(Boolean).join(' - '), ctx, { companyFirst: mode === 'company-first' }),
-      para([text(subtitle, { italics: mode === 'company-first', bold: mode !== 'company-first', color: '374151', size: 20, font: ctx.font })], { after: 45 }),
-      ...lines(exp.description).map((line) => bullet(line, ctx)),
-      para([''], { after: 80 }),
-    ];
+function bulletList(items: string[], opts: { color?: string; size?: number; font?: string; indent?: number } = {}): Paragraph[] {
+  const color = opts.color ?? '374151';
+  const size = opts.size ?? 20;
+  const font = opts.font;
+  const left = opts.indent ?? 360;
+
+  return items.map((item) =>
+    new Paragraph({
+      spacing: { after: 55, line: 260 },
+      indent: { left, hanging: 180 },
+      children: [
+        run('• ', { color, size, font }),
+        run(item, { color, size, font }),
+      ],
+    }),
+  );
+}
+
+function spacer(after = 100): Paragraph {
+  return paragraph([''], { after });
+}
+
+interface PillOpts {
+  textColor?: string;
+  fillColor?: string;
+  borderColor?: string;
+  font?: string;
+  size?: number;
+  bold?: boolean;
+  columns?: number;
+  cellMargin?: number;
+  align?: 'CENTER' | 'LEFT';
+}
+
+/**
+ * Render an array of short labels (skills, technologies) as a wrapping grid of
+ * pill-style boxes: each item is its own bordered, lightly-filled table cell.
+ * Word can't auto-size cells to content like CSS flex-wrap, so we use a fixed
+ * column count with equal-width cells — visually it reads as a tag cloud.
+ */
+function pillGrid(items: string[], opts: PillOpts = {}): Table | null {
+  if (!items.length) return null;
+  const cols = Math.max(1, Math.min(items.length, opts.columns ?? 4));
+  const textColor = opts.textColor ?? '374151';
+  const fillColor = opts.fillColor ?? 'FFFFFF';
+  const borderColor = opts.borderColor ?? 'D1D5DB';
+  const font = opts.font;
+  const size = opts.size ?? 18;
+  const bold = opts.bold ?? false;
+  const margin = opts.cellMargin ?? 120;
+  const align = opts.align ?? 'CENTER';
+
+  const cellWidth = Math.floor(100 / cols);
+  const makeCell = (label: string) =>
+    new TableCell({
+      width: { size: cellWidth, type: WidthType.PERCENTAGE },
+      shading: { type: ShadingType.CLEAR, fill: fillColor },
+      margins: { top: margin, bottom: margin, left: margin + 40, right: margin + 40 },
+      verticalAlign: 'center' as typeof VerticalAlignTable[keyof typeof VerticalAlignTable],
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 4, color: borderColor },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: borderColor },
+        left: { style: BorderStyle.SINGLE, size: 4, color: borderColor },
+        right: { style: BorderStyle.SINGLE, size: 4, color: borderColor },
+      },
+      children: [
+        new Paragraph({
+          alignment: AlignmentType[align],
+          spacing: { before: 0, after: 0, line: 240 },
+          children: [run(label, { color: textColor, size, font, bold })],
+        }),
+      ],
+    });
+
+  // Spacer cell — invisible, used to keep the last row left-aligned when items % cols != 0.
+  const makeBlankCell = () =>
+    new TableCell({
+      width: { size: cellWidth, type: WidthType.PERCENTAGE },
+      margins: { top: margin, bottom: margin, left: margin, right: margin },
+      borders: {
+        top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+        bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+        left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+        right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+      },
+      children: [new Paragraph({ children: [run('')] })],
+    });
+
+  const rows: TableRow[] = [];
+  for (let i = 0; i < items.length; i += cols) {
+    const slice = items.slice(i, i + cols);
+    const children = slice.map(makeCell);
+    while (children.length < cols) children.push(makeBlankCell());
+    rows.push(new TableRow({ children }));
+  }
+
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    borders: ALL_NO_BORDERS,
+    rows,
   });
 }
 
-function projectBlocks(ctx: TemplateContext, compact = false) {
-  return ctx.data.projects.flatMap((project) => [
-    para([
-      text(project.name, { bold: true, color: ctx.accent, size: compact ? 20 : 22, font: ctx.font }),
-      ...(project.link ? [text(` (${project.link})`, { italics: true, color: '4B5563', size: 18, font: ctx.font })] : []),
-    ], { after: 45 }),
-    ...lines(project.description).map((line) => (compact ? para([text(line, { size: 20, font: ctx.font })], { after: 45 }) : bullet(line, ctx))),
-    ...(project.technologies?.length ? [para([text(`Technologies: ${project.technologies.join(', ')}`, { italics: true, color: '4B5563', size: 18, font: ctx.font })], { after: 100 })] : []),
-  ]);
-}
+/* =====================================================================
+ * MINIMAL TEMPLATE
+ * Centered uppercase name, accent job title, contact row in icons-line.
+ * Section headings: bold, uppercase, primary color, bottom border.
+ * Experience: role (accent) left, date (gray) right; company bold;
+ * bullets with disc marker.
+ * ===================================================================== */
+function buildMinimal(ctx: BuildContext): DocxNode[] {
+  const { data, palette } = ctx;
+  const { primary, accent, font } = palette;
+  const nodes: DocxNode[] = [];
 
-function educationBlocks(ctx: TemplateContext, compact = false) {
-  return ctx.data.education.flatMap((edu) => [
-    datedLine(compact ? edu.institution : edu.degree, [edu.startDate, edu.endDate].filter(Boolean).join(' - '), ctx, { companyFirst: compact }),
-    para([text(compact ? edu.degree : edu.institution, { italics: compact, bold: !compact, color: '374151', size: 20, font: ctx.font })], { after: 35 }),
-    ...(edu.description ? [para([text(edu.description, { size: 20, font: ctx.font })], { after: 100 })] : []),
-  ]);
-}
+  // Header: 2-col table — left text, right blank (could hold image)
+  nodes.push(fullTable([
+    new TableRow({
+      children: [
+        tableCell([
+          paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 40, font, allCaps: true })], { after: 60 }),
+          paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 24, font })], { after: 120 }),
+          paragraph([run(contactItems(data).join('   |   '), { color: '4B5563', size: 18, font })], { after: 0 }),
+        ], { width: 100, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+      ],
+    }),
+  ]));
 
-function buildMinimal(ctx: TemplateContext) {
-  const data = ctx.data;
-  const nodes: DocxNode[] = [
-    para([text(data.personalInfo.fullName, { bold: true, color: ctx.primary, size: 38, font: ctx.font, allCaps: true })], { align: 'CENTER', after: 45 }),
-    para([text(data.personalInfo.jobTitle, { color: ctx.accent, size: 24, font: ctx.font })], { align: 'CENTER', after: 80 }),
-    para([text(contactItems(data).join(' | '), { color: '4B5563', size: 18, font: ctx.font })], { align: 'CENTER', after: 190 }),
-  ];
+  // Bottom border to mimic header underline
+  nodes.push(paragraph([''], { after: 80, border: { bottom: { color: primary, size: 12 } } }));
+  nodes.push(spacer(140));
 
-  if (data.personalInfo.summary) nodes.push(sectionHeading('Summary', ctx), para([text(data.personalInfo.summary, { size: 20, font: ctx.font })]));
-  if (data.experience.length) nodes.push(sectionHeading('Experience', ctx), ...experienceBlocks(ctx));
-  if (data.projects.length) nodes.push(sectionHeading('Projects', ctx), ...projectBlocks(ctx, true));
-  if (data.education.length) nodes.push(sectionHeading('Education', ctx), ...educationBlocks(ctx));
-  if (data.skills.length) nodes.push(sectionHeading('Skills', ctx), para([text(data.skills.join(' | '), { size: 20, font: ctx.font })]));
+  const section = (label: string): Paragraph =>
+    paragraph(
+      [run(label, { bold: true, color: primary, size: 22, font, allCaps: true })],
+      { after: 80, before: 60, border: { bottom: { color: primary, size: 6 } }, keepNext: true },
+    );
 
-  return nodes;
-}
+  if (data.personalInfo.summary) {
+    nodes.push(section('Summary'));
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 20, font })], { after: 200 }));
+  }
 
-function buildHarvard(ctx: TemplateContext) {
-  const data = ctx.data;
-  const nodes: DocxNode[] = [
-    para([text(data.personalInfo.fullName, { bold: true, color: ctx.primary, size: 34, font: ctx.font, allCaps: true })], { align: 'CENTER', after: 50 }),
-    para([text([data.personalInfo.location, data.personalInfo.phone, data.personalInfo.email, data.personalInfo.linkedin].filter(Boolean).join(' | '), { color: ctx.accent, size: 18, font: ctx.font })], { align: 'CENTER', after: 170 }),
-  ];
+  if (data.experience.length) {
+    nodes.push(section('Experience'));
+    data.experience.forEach((exp, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run(exp.role, { bold: true, color: accent, size: 22, font })], { after: 30 })], { width: 70, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 19, font })], { align: 'RIGHT', after: 30 })], { width: 30, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      nodes.push(paragraph([run(exp.company, { bold: true, color: '374151', size: 20, font })], { after: 80 }));
+      bulletList(splitLines(exp.description), { color: '1F2937', size: 20, font }).forEach((b) => nodes.push(b));
+      if (idx < data.experience.length - 1) nodes.push(spacer(120));
+    });
+    nodes.push(spacer(120));
+  }
 
-  if (data.personalInfo.summary) nodes.push(para([text(data.personalInfo.summary, { size: 20, font: ctx.font })], { after: 180 }));
-  if (data.experience.length) nodes.push(sectionHeading('Experience', ctx, { compact: true }), ...experienceBlocks(ctx, 'company-first'));
-  if (data.education.length) nodes.push(sectionHeading('Education', ctx, { compact: true }), ...educationBlocks(ctx, true));
-  if (data.projects.length) nodes.push(sectionHeading('Projects', ctx, { compact: true }), ...projectBlocks(ctx, true));
-  if (data.skills.length) nodes.push(sectionHeading('Skills', ctx, { compact: true }), para([text('Technical Skills: ', { bold: true, font: ctx.font, size: 20 }), text(data.skills.join(', '), { font: ctx.font, size: 20 })]));
-
-  return nodes;
-}
-
-function buildModern(ctx: TemplateContext) {
-  const data = ctx.data;
-  const left: DocxNode[] = [
-    para([text(data.personalInfo.fullName, { bold: true, color: 'FFFFFF', size: 32, font: ctx.font })], { after: 40 }),
-    para([text(data.personalInfo.jobTitle, { color: ctx.accent, size: 21, font: ctx.font })], { after: 180 }),
-    sectionHeading('Contact', { ...ctx, primary: 'FFFFFF' }, { compact: true, color: 'FFFFFF', border: false }),
-    ...contactItems(data).map((item) => para([text(item, { color: 'CBD5E1', size: 18, font: ctx.font })], { after: 65 })),
-  ];
-
-  if (data.skills.length) {
-    left.push(sectionHeading('Skills', { ...ctx, primary: 'FFFFFF' }, { compact: true, color: 'FFFFFF', border: false }));
-    data.skills.forEach((skill) => left.push(para([text(skill, { color: 'E2E8F0', size: 18, font: ctx.font })], { after: 45 })));
+  if (data.projects.length) {
+    nodes.push(section('Projects'));
+    data.projects.forEach((proj, idx) => {
+      const head: TextRun[] = [run(proj.name, { bold: true, color: accent, size: 22, font })];
+      if (proj.link) head.push(run(`  (${proj.link})`, { color: '2563EB', size: 18, font }));
+      nodes.push(paragraph(head, { after: 40 }));
+      nodes.push(paragraph([run(proj.description, { color: '1F2937', size: 20, font })], { after: 40 }));
+      if (proj.technologies?.length) {
+        nodes.push(paragraph([run(`Technologies: ${proj.technologies.join(', ')}`, { italics: true, color: '6B7280', size: 18, font })], { after: idx < data.projects.length - 1 ? 140 : 80 }));
+      }
+    });
+    nodes.push(spacer(120));
   }
 
   if (data.education.length) {
-    left.push(sectionHeading('Education', { ...ctx, primary: 'FFFFFF' }, { compact: true, color: 'FFFFFF', border: false }));
-    data.education.forEach((edu) => {
-      left.push(para([text(edu.degree, { bold: true, color: 'FFFFFF', size: 18, font: ctx.font })], { after: 25 }));
-      left.push(para([text(edu.institution, { color: 'CBD5E1', size: 17, font: ctx.font })], { after: 25 }));
-      left.push(para([text([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '94A3B8', size: 16, font: ctx.font })], { after: 90 }));
+    nodes.push(section('Education'));
+    data.education.forEach((edu, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run(edu.degree, { bold: true, color: accent, size: 22, font })], { after: 30 })], { width: 70, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 19, font })], { align: 'RIGHT', after: 30 })], { width: 30, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      nodes.push(paragraph([run(edu.institution, { bold: true, color: '374151', size: 20, font })], { after: 40 }));
+      if (edu.description) nodes.push(paragraph([run(edu.description, { color: '1F2937', size: 20, font })], { after: idx < data.education.length - 1 ? 140 : 80 }));
+    });
+    nodes.push(spacer(120));
+  }
+
+  if (data.skills.length) {
+    nodes.push(section('Skills'));
+    const grid = pillGrid(data.skills, {
+      textColor: '1F2937',
+      fillColor: 'F9FAFB',
+      borderColor: 'D1D5DB',
+      font,
+      size: 18,
+      columns: 4,
+    });
+    if (grid) nodes.push(grid);
+  }
+
+  return nodes;
+}
+
+/* =====================================================================
+ * MODERN TEMPLATE
+ * Left sidebar: dark slate background, white name, accent job title,
+ * contact items vertically, skills pills, education.
+ * Right column: light gray, profile, experience with timeline-style
+ * bullets, projects.
+ * ===================================================================== */
+function buildModern(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const sidebarText = 'CBD5E1';
+  const sidebarSoft = '94A3B8';
+  const rightBg = 'F8FAFC';
+  const rightBody = '475569';
+
+  const left: DocxNode[] = [];
+  left.push(paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'FFFFFF', size: 34, font })], { after: 60 }));
+  left.push(paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 22, font })], { after: 280 }));
+
+  // Contact
+  if (contactItems(data).length) {
+    contactItems(data).forEach((item) => {
+      left.push(paragraph([run(item, { color: sidebarText, size: 18, font })], { after: 90 }));
+    });
+    left.push(spacer(140));
+  }
+
+  if (data.skills.length) {
+    left.push(paragraph(
+      [run('Skills', { bold: true, color: 'FFFFFF', size: 22, font, allCaps: true })],
+      { after: 90, border: { bottom: { color: 'FFFFFF', size: 6 } } },
+    ));
+    const grid = pillGrid(data.skills, {
+      textColor: 'E2E8F0',
+      fillColor: '334155',
+      borderColor: '475569',
+      font,
+      size: 16,
+      columns: 2,
+      cellMargin: 80,
+    });
+    if (grid) left.push(grid);
+    left.push(spacer(160));
+  }
+
+  if (data.education.length) {
+    left.push(paragraph(
+      [run('Education', { bold: true, color: 'FFFFFF', size: 22, font, allCaps: true })],
+      { after: 90, border: { bottom: { color: 'FFFFFF', size: 6 } } },
+    ));
+    data.education.forEach((edu, idx) => {
+      left.push(paragraph([run(edu.degree, { bold: true, color: 'FFFFFF', size: 19, font })], { after: 30 }));
+      left.push(paragraph([run(edu.institution, { color: sidebarText, size: 18, font })], { after: 30 }));
+      left.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: sidebarSoft, size: 16, font })], { after: idx < data.education.length - 1 ? 140 : 80 }));
     });
   }
 
+  const sectionHead = (label: string): Paragraph => paragraph(
+    [run(label, { bold: true, color: primary, size: 26, font, allCaps: true })],
+    { after: 120, before: 80, border: { bottom: { color: primary, size: 8 } }, keepNext: true },
+  );
+
   const right: DocxNode[] = [];
-  if (data.personalInfo.summary) right.push(sectionHeading('Profile', ctx), para([text(data.personalInfo.summary, { color: '475569', size: 20, font: ctx.font })]));
-  if (data.experience.length) right.push(sectionHeading('Experience', ctx), ...experienceBlocks(ctx));
-  if (data.projects.length) right.push(sectionHeading('Projects', ctx), ...projectBlocks(ctx, true));
+  if (data.personalInfo.summary) {
+    right.push(sectionHead('Profile'));
+    right.push(paragraph([run(data.personalInfo.summary, { color: rightBody, size: 20, font })], { after: 240 }));
+  }
+
+  if (data.experience.length) {
+    right.push(sectionHead('Experience'));
+    data.experience.forEach((exp, idx) => {
+      right.push(paragraph([run(exp.role, { bold: true, color: primary, size: 24, font })], { after: 40 }));
+      const meta: TextRun[] = [
+        run(exp.company, { bold: true, color: rightBody, size: 19, font }),
+      ];
+      if (exp.startDate || exp.endDate) {
+        meta.push(run('   '));
+        meta.push(run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '64748B', size: 17, font }));
+      }
+      right.push(paragraph(meta, { after: 60 }));
+      bulletList(splitLines(exp.description), { color: rightBody, size: 19, font, indent: 240 }).forEach((b) => right.push(b));
+      if (idx < data.experience.length - 1) right.push(spacer(140));
+    });
+    right.push(spacer(120));
+  }
+
+  if (data.projects.length) {
+    right.push(sectionHead('Projects'));
+    data.projects.forEach((proj, idx) => {
+      const head: TextRun[] = [run(proj.name, { bold: true, color: primary, size: 22, font })];
+      if (proj.link) head.push(run(`   (${proj.link})`, { italics: true, color: accent, size: 17, font }));
+      right.push(paragraph(head, { after: 40 }));
+      right.push(paragraph([run(proj.description, { color: rightBody, size: 19, font })], { after: 40 }));
+      if (proj.technologies?.length) {
+        right.push(paragraph([run(proj.technologies.join('   •   '), { color: '64748B', size: 16, font })], { after: idx < data.projects.length - 1 ? 160 : 80 }));
+      }
+    });
+  }
 
   return [
-    table([
+    fullTable([
       new TableRow({
         children: [
-          cell(left, { width: 34, fill: ctx.primary, margins: 260 }),
-          cell(right, { width: 66, fill: 'F8FAFC', margins: 260 }),
+          tableCell(left, { width: 36, fill: primary, margins: { top: 480, bottom: 480, left: 360, right: 280 } }),
+          tableCell(right, { width: 64, fill: rightBg, margins: { top: 480, bottom: 480, left: 400, right: 400 } }),
         ],
       }),
     ]),
   ];
 }
 
-function buildEuropass(ctx: TemplateContext) {
-  const data = ctx.data;
-  const rows: TableRow[] = [
+/* =====================================================================
+ * EUROPASS TEMPLATE
+ * Solid navy header band; below: 1:3 grid with right-aligned uppercase
+ * labels in primary color, and content with bold "key: value" lines.
+ * ===================================================================== */
+function buildEuropass(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const rows: TableRow[] = [];
+
+  rows.push(new TableRow({
+    children: [
+      tableCell([
+        paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'FFFFFF', size: 34, font })], { after: 60 }),
+        paragraph([run(data.personalInfo.jobTitle || '', { color: 'DBEAFE', size: 24, font })], { after: 0 }),
+      ], { width: 100, fill: primary, margins: { top: 420, bottom: 420, left: 480, right: 480 }, colSpan: 2 }),
+    ],
+  }));
+
+  const labelCell = (label: string) =>
+    tableCell(
+      [paragraph([run(label, { bold: true, color: primary, size: 20, font, allCaps: true })], { align: 'RIGHT', after: 0 })],
+      { width: 24, margins: { top: 200, bottom: 200, left: 120, right: 240 } },
+    );
+
+  const contentCell = (children: DocxNode[]) =>
+    tableCell(children, { width: 76, margins: { top: 200, bottom: 200, left: 200, right: 200 } });
+
+  const personalContent: DocxNode[] = [];
+  const i = data.personalInfo;
+  const entries: Array<[string, string | undefined]> = [
+    ['Address', i.location], ['Email', i.email], ['Phone', i.phone],
+    ['LinkedIn', i.linkedin], ['GitHub', i.github], ['Website', i.website],
+  ];
+  entries.forEach(([k, v]) => {
+    if (!v) return;
+    personalContent.push(paragraph([
+      run(`${k}: `, { bold: true, color: '111827', size: 19, font }),
+      run(v, { color: '111827', size: 19, font }),
+    ], { after: 50 }));
+  });
+  if (personalContent.length) rows.push(new TableRow({ children: [labelCell('Personal Info'), contentCell(personalContent)] }));
+
+  if (data.personalInfo.summary) {
+    rows.push(new TableRow({
+      children: [labelCell('Summary'), contentCell([
+        paragraph([run(data.personalInfo.summary, { color: '111827', size: 20, font })]),
+      ])],
+    }));
+  }
+
+  if (data.experience.length) {
+    const items: DocxNode[] = [];
+    data.experience.forEach((exp, idx) => {
+      items.push(paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 18, font })], { after: 30 }));
+      items.push(paragraph([run(exp.role, { bold: true, color: '111827', size: 21, font })], { after: 30 }));
+      items.push(paragraph([run(exp.company, { bold: true, color: accent, size: 19, font })], { after: 60 }));
+      bulletList(splitLines(exp.description), { color: '111827', size: 19, font }).forEach((b) => items.push(b));
+      if (idx < data.experience.length - 1) items.push(spacer(140));
+    });
+    rows.push(new TableRow({ children: [labelCell('Work Experience'), contentCell(items)] }));
+  }
+
+  if (data.education.length) {
+    const items: DocxNode[] = [];
+    data.education.forEach((edu, idx) => {
+      items.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 18, font })], { after: 30 }));
+      items.push(paragraph([run(edu.degree, { bold: true, color: '111827', size: 21, font })], { after: 30 }));
+      items.push(paragraph([run(edu.institution, { bold: true, color: accent, size: 19, font })], { after: 60 }));
+      if (edu.description) items.push(paragraph([run(edu.description, { color: '111827', size: 19, font })], { after: idx < data.education.length - 1 ? 140 : 0 }));
+    });
+    rows.push(new TableRow({ children: [labelCell('Education'), contentCell(items)] }));
+  }
+
+  if (data.projects.length) {
+    const items: DocxNode[] = [];
+    data.projects.forEach((proj, idx) => {
+      const head: TextRun[] = [run(proj.name, { bold: true, color: '111827', size: 21, font })];
+      if (proj.link) head.push(run(`  (${proj.link})`, { italics: true, color: accent, size: 17, font }));
+      items.push(paragraph(head, { after: 40 }));
+      items.push(paragraph([run(proj.description, { color: '111827', size: 19, font })], { after: 40 }));
+      if (proj.technologies?.length) {
+        items.push(paragraph([
+          run('Tech: ', { italics: true, color: '6B7280', size: 17, font }),
+          run(proj.technologies.join(', '), { italics: true, color: '6B7280', size: 17, font }),
+        ], { after: idx < data.projects.length - 1 ? 140 : 0 }));
+      }
+    });
+    rows.push(new TableRow({ children: [labelCell('Projects'), contentCell(items)] }));
+  }
+
+  if (data.skills.length) {
+    const grid = pillGrid(data.skills, {
+      textColor: primary,
+      fillColor: 'EFF6FF',
+      borderColor: 'BFDBFE',
+      font,
+      size: 18,
+      columns: 3,
+    });
+    rows.push(new TableRow({
+      children: [labelCell('Skills'), contentCell(grid ? [grid] : [
+        paragraph([run(data.skills.join(', '), { color: '111827', size: 20, font })]),
+      ])],
+    }));
+  }
+
+  return [fullTable(rows)];
+}
+
+/* =====================================================================
+ * HARVARD TEMPLATE
+ * Times New Roman (serif). Centered black uppercase name. Pipe-separated
+ * contact line. Section headings underlined.
+ * Experience: company bold left, dates right; role italic below; bullets.
+ * ===================================================================== */
+function buildHarvard(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const nodes: DocxNode[] = [];
+
+  nodes.push(paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 34, font, allCaps: true })], { align: 'CENTER', after: 80 }));
+
+  const contact = [data.personalInfo.location, data.personalInfo.phone, data.personalInfo.email, data.personalInfo.linkedin]
+    .filter(Boolean).join(' | ');
+  if (contact) nodes.push(paragraph([run(contact, { color: accent, size: 20, font })], { align: 'CENTER', after: 200 }));
+
+  if (data.personalInfo.summary) {
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: '000000', size: 22, font })], { after: 200 }));
+  }
+
+  const section = (label: string): Paragraph =>
+    paragraph(
+      [run(label, { bold: true, color: primary, size: 22, font, allCaps: true })],
+      { after: 100, before: 100, border: { bottom: { color: primary, size: 6 } }, keepNext: true },
+    );
+
+  if (data.experience.length) {
+    nodes.push(section('Experience'));
+    data.experience.forEach((exp, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run(exp.company, { bold: true, color: '000000', size: 22, font })], { after: 30 })], { width: 70, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '000000', size: 20, font })], { align: 'RIGHT', after: 30 })], { width: 30, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      nodes.push(paragraph([run(exp.role, { italics: true, color: accent, size: 20, font })], { after: 60 }));
+      bulletList(splitLines(exp.description), { color: '000000', size: 20, font }).forEach((b) => nodes.push(b));
+      if (idx < data.experience.length - 1) nodes.push(spacer(140));
+    });
+    nodes.push(spacer(80));
+  }
+
+  if (data.education.length) {
+    nodes.push(section('Education'));
+    data.education.forEach((edu, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run(edu.institution, { bold: true, color: '000000', size: 22, font })], { after: 30 })], { width: 70, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '000000', size: 20, font })], { align: 'RIGHT', after: 30 })], { width: 30, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      nodes.push(paragraph([run(edu.degree, { italics: true, color: accent, size: 20, font })], { after: 40 }));
+      if (edu.description) nodes.push(paragraph([run(edu.description, { color: '000000', size: 20, font })], { after: idx < data.education.length - 1 ? 140 : 80 }));
+    });
+    nodes.push(spacer(80));
+  }
+
+  if (data.projects.length) {
+    nodes.push(section('Projects'));
+    data.projects.forEach((proj, idx) => {
+      const head: TextRun[] = [run(proj.name, { bold: true, color: '000000', size: 22, font })];
+      if (proj.link) head.push(run(`  (${proj.link})`, { italics: true, color: '000000', size: 18, font }));
+      nodes.push(paragraph(head, { after: 40 }));
+      nodes.push(paragraph([run(proj.description, { color: '000000', size: 20, font })], { after: 40 }));
+      if (proj.technologies?.length) {
+        nodes.push(paragraph([run(`Technologies: ${proj.technologies.join(', ')}`, { italics: true, color: '000000', size: 18, font })], { after: idx < data.projects.length - 1 ? 140 : 80 }));
+      }
+    });
+    nodes.push(spacer(80));
+  }
+
+  if (data.skills.length) {
+    nodes.push(section('Skills'));
+    nodes.push(paragraph([
+      run('Technical Skills: ', { bold: true, color: '000000', size: 20, font }),
+      run(data.skills.join(', '), { color: '000000', size: 20, font }),
+    ]));
+  }
+
+  return nodes;
+}
+
+/* =====================================================================
+ * ENGINEERS AUSTRALIA TEMPLATE
+ * Centered name with bottom border. Contact in 2-col label/value grid.
+ * Section headings with primary border. Education/Experience use 1:3
+ * date/content rows. Experience inserts "Duties & Responsibilities:"
+ * underlined header before bullets, indented to align with content col.
+ * ===================================================================== */
+function buildEngineersAustralia(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const nodes: DocxNode[] = [];
+
+  nodes.push(paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 34, font, allCaps: true })], { align: 'CENTER', after: 120 }));
+
+  const contactRow = (label: string, value?: string): TableRow | undefined => {
+    if (!value) return undefined;
+    return new TableRow({
+      children: [
+        tableCell([paragraph([run(`${label}:`, { bold: true, color: accent, size: 20, font })], { align: 'RIGHT', after: 0 })], { width: 35, margins: { top: 40, bottom: 40, left: 0, right: 160 } }),
+        tableCell([paragraph([run(value, { color: '111827', size: 20, font })], { after: 0 })], { width: 65, margins: { top: 40, bottom: 40, left: 0, right: 0 } }),
+      ],
+    });
+  };
+
+  const contactRows = [
+    contactRow('Address', data.personalInfo.location),
+    contactRow('Phone', data.personalInfo.phone),
+    contactRow('Email', data.personalInfo.email),
+    contactRow('LinkedIn', data.personalInfo.linkedin),
+  ].filter((r): r is TableRow => Boolean(r));
+  if (contactRows.length) nodes.push(fullTable(contactRows, 75));
+
+  nodes.push(paragraph([''], { after: 60, border: { bottom: { color: primary, size: 12 } } }));
+  nodes.push(spacer(140));
+
+  const section = (label: string): Paragraph =>
+    paragraph(
+      [run(label, { bold: true, color: primary, size: 22, font, allCaps: true })],
+      { after: 80, before: 60, border: { bottom: { color: primary, size: 6 } }, keepNext: true },
+    );
+
+  if (data.personalInfo.summary) {
+    nodes.push(section('Career Objective'));
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: '111827', size: 20, font })], { align: 'BOTH', after: 200 }));
+  }
+
+  if (data.education.length) {
+    nodes.push(section('Academic Qualifications'));
+    data.education.forEach((edu, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { bold: true, color: accent, size: 20, font })], { after: 0 })], { width: 25, margins: { top: 0, bottom: 0, left: 0, right: 200 } }),
+            tableCell([
+              paragraph([run(edu.degree, { bold: true, color: '111827', size: 20, font })], { after: 30 }),
+              paragraph([run(edu.institution, { italics: true, color: '111827', size: 20, font })], { after: edu.description ? 40 : 0 }),
+              ...(edu.description ? [paragraph([run(edu.description, { color: '111827', size: 20, font })], { after: 0 })] : []),
+            ], { width: 75, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      if (idx < data.education.length - 1) nodes.push(spacer(140));
+    });
+    nodes.push(spacer(140));
+  }
+
+  if (data.skills.length) {
+    nodes.push(section('Software & Technical Skills'));
+    // Two-column skill list via table
+    const half = Math.ceil(data.skills.length / 2);
+    const col1 = data.skills.slice(0, half);
+    const col2 = data.skills.slice(half);
+    nodes.push(fullTable([
+      new TableRow({
+        children: [
+          tableCell(bulletList(col1, { color: '111827', size: 20, font, indent: 240 }), { width: 50, margins: { top: 0, bottom: 0, left: 0, right: 200 } }),
+          tableCell(bulletList(col2, { color: '111827', size: 20, font, indent: 240 }), { width: 50, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+        ],
+      }),
+    ]));
+    nodes.push(spacer(140));
+  }
+
+  if (data.experience.length) {
+    nodes.push(section('Employment History'));
+    data.experience.forEach((exp, idx) => {
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { bold: true, color: accent, size: 20, font })], { after: 0 })], { width: 25, margins: { top: 0, bottom: 0, left: 0, right: 200 } }),
+            tableCell([
+              paragraph([run(exp.company, { bold: true, color: '111827', size: 22, font })], { after: 30 }),
+              paragraph([run(exp.role, { italics: true, bold: true, color: '111827', size: 20, font })], { after: 60 }),
+            ], { width: 75, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      // Duties row, indented to right column
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([''], { after: 0 })], { width: 25, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([
+              paragraph([run('Duties & Responsibilities:', { bold: true, color: '111827', size: 20, font, underline: true })], { after: 60, keepNext: true }),
+              ...bulletList(splitLines(exp.description), { color: '111827', size: 20, font, indent: 240 }),
+            ], { width: 75, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      if (idx < data.experience.length - 1) nodes.push(spacer(180));
+    });
+    nodes.push(spacer(140));
+  }
+
+  if (data.projects.length) {
+    nodes.push(section('Key Projects'));
+    data.projects.forEach((proj, idx) => {
+      const head: TextRun[] = [run(proj.name, { bold: true, color: '111827', size: 20, font })];
+      if (proj.link) head.push(run(`  (${proj.link})`, { italics: true, color: '6B7280', size: 17, font }));
+      nodes.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell([paragraph([''], { after: 0 })], { width: 25, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+            tableCell([
+              paragraph(head, { after: 40 }),
+              paragraph([run(proj.description, { color: '111827', size: 20, font })], { after: 40 }),
+              ...(proj.technologies?.length ? [paragraph([
+                run('Technologies used: ', { bold: true, italics: true, color: '111827', size: 18, font }),
+                run(proj.technologies.join(', '), { italics: true, color: '111827', size: 18, font }),
+              ], { after: 0 })] : []),
+            ], { width: 75, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          ],
+        }),
+      ]));
+      if (idx < data.projects.length - 1) nodes.push(spacer(160));
+    });
+  }
+
+  return nodes;
+}
+
+/* =====================================================================
+ * GRID PORTFOLIO TEMPLATE
+ * Centered hero (huge name, primary color subtitle, gray summary, contact).
+ * "Featured Work" section with 2-col project card grid.
+ * Below: 2:1 split of Experience | Skills+Education
+ * ===================================================================== */
+function buildPortfolio(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const cardFill = 'FFFFFF';
+  const pageFill = 'F8F9FA';
+  const nodes: DocxNode[] = [];
+
+  // Hero
+  const hero: DocxNode[] = [
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: '111827', size: 48, font })], { align: 'CENTER', after: 80 }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: primary, size: 26, font })], { align: 'CENTER', after: 160 }),
+  ];
+  if (data.personalInfo.summary) {
+    hero.push(paragraph([run(data.personalInfo.summary, { color: '4B5563', size: 22, font })], { align: 'CENTER', after: 200 }));
+  }
+  const contactLine: string[] = [];
+  if (data.personalInfo.email) contactLine.push(data.personalInfo.email);
+  if (data.personalInfo.location) contactLine.push(data.personalInfo.location);
+  if (data.personalInfo.github) contactLine.push(data.personalInfo.github);
+  if (data.personalInfo.linkedin) contactLine.push(data.personalInfo.linkedin);
+  if (contactLine.length) hero.push(paragraph([run(contactLine.join('   |   '), { color: primary, size: 19, font })], { align: 'CENTER', after: 0 }));
+
+  // Wrap whole page in a light-fill table to mimic bg color
+  const inner: DocxNode[] = [...hero, spacer(280)];
+
+  if (data.projects.length) {
+    inner.push(paragraph([run('Featured Work', { bold: true, color: '111827', size: 32, font })], { after: 200, keepNext: true }));
+    // Build 2-col grid
+    const projectCells: TableCell[] = data.projects.map((proj) => {
+      const cellChildren: DocxNode[] = [];
+      const head: TextRun[] = [run(proj.name, { bold: true, color: '111827', size: 24, font })];
+      if (proj.link) head.push(run(`  (${proj.link})`, { color: primary, size: 16, font }));
+      cellChildren.push(paragraph(head, { after: 100 }));
+      cellChildren.push(paragraph([run(proj.description, { color: '4B5563', size: 19, font })], { after: 120 }));
+      if (proj.technologies?.length) {
+        cellChildren.push(paragraph([run(proj.technologies.join('   •   '), { color: primary, size: 17, font })]));
+      }
+      return tableCell(cellChildren, { width: 50, fill: cardFill, margins: { top: 320, bottom: 320, left: 320, right: 320 } });
+    });
+    const rows: TableRow[] = [];
+    for (let i = 0; i < projectCells.length; i += 2) {
+      const c1 = projectCells[i];
+      const c2 = projectCells[i + 1] ?? tableCell([], { width: 50, fill: pageFill });
+      rows.push(new TableRow({ children: [c1, c2] }));
+    }
+    inner.push(fullTable(rows));
+    inner.push(spacer(280));
+  }
+
+  // 2:1 split
+  if (data.experience.length || data.skills.length || data.education.length) {
+    const expCol: DocxNode[] = [];
+    if (data.experience.length) {
+      expCol.push(paragraph([run('Experience', { bold: true, color: '111827', size: 26, font })], { after: 160, keepNext: true }));
+      data.experience.forEach((exp, idx) => {
+        expCol.push(paragraph([run(exp.role, { bold: true, color: '111827', size: 22, font })], { after: 40 }));
+        expCol.push(paragraph([
+          run(exp.company, { bold: true, color: primary, size: 19, font }),
+          run('  |  ', { color: '9CA3AF', size: 19, font }),
+          run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 18, font }),
+        ], { after: 80 }));
+        bulletList(splitLines(exp.description), { color: '4B5563', size: 19, font }).forEach((b) => expCol.push(b));
+        if (idx < data.experience.length - 1) expCol.push(spacer(160));
+      });
+    }
+
+    const sideCol: DocxNode[] = [];
+    if (data.skills.length) {
+      sideCol.push(paragraph([run('Skills', { bold: true, color: '111827', size: 26, font })], { after: 160, keepNext: true }));
+      const grid = pillGrid(data.skills, {
+        textColor: '374151',
+        fillColor: cardFill,
+        borderColor: 'BFDBFE',
+        font,
+        size: 17,
+        columns: 2,
+      });
+      if (grid) sideCol.push(grid);
+      sideCol.push(spacer(180));
+    }
+    if (data.education.length) {
+      sideCol.push(paragraph([run('Education', { bold: true, color: '111827', size: 26, font })], { after: 160, keepNext: true }));
+      data.education.forEach((edu, idx) => {
+        sideCol.push(paragraph([run(edu.degree, { bold: true, color: '111827', size: 20, font })], { after: 30, shading: cardFill, indent: { left: 80, right: 80 } }));
+        sideCol.push(paragraph([run(edu.institution, { color: '4B5563', size: 18, font })], { after: 30, shading: cardFill, indent: { left: 80, right: 80 } }));
+        sideCol.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '9CA3AF', size: 16, font })], { after: idx < data.education.length - 1 ? 120 : 0, shading: cardFill, indent: { left: 80, right: 80 } }));
+      });
+    }
+
+    inner.push(fullTable([
+      new TableRow({
+        children: [
+          tableCell(expCol, { width: 66, margins: { top: 0, bottom: 0, left: 0, right: 400 } }),
+          tableCell(sideCol, { width: 34, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+        ],
+      }),
+    ]));
+  }
+
+  // Wrap with outer page-fill table
+  return [
+    fullTable([
+      new TableRow({
+        children: [
+          tableCell(inner, { width: 100, fill: pageFill, margins: { top: 600, bottom: 600, left: 540, right: 540 } }),
+        ],
+      }),
+    ]),
+  ];
+}
+
+/* =====================================================================
+ * CREATIVE PORTFOLIO TEMPLATE
+ * Rose/pink hero banner with big name. Below: 2:1 About | Contact card.
+ * "Selected Works" with 2-col project cards (white on light gray bg).
+ * Then 1:1 split of Experience | Expertise+Education.
+ * ===================================================================== */
+function buildCreative(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent, font } = ctx.palette;
+  const pageFill = 'FAFAFA';
+  const cardFill = 'FFFFFF';
+  const nodes: DocxNode[] = [];
+
+  // Hero band
+  nodes.push(fullTable([
     new TableRow({
       children: [
-        cell([
-          para([text(data.personalInfo.fullName, { bold: true, color: 'FFFFFF', size: 34, font: ctx.font })], { after: 35 }),
-          para([text(data.personalInfo.jobTitle, { color: 'DBEAFE', size: 23, font: ctx.font })], { after: 0 }),
-        ], { width: 100, fill: ctx.primary, margins: 260 }),
+        tableCell([
+          paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'FFFFFF', size: 52, font })], { after: 80 }),
+          paragraph([run(data.personalInfo.jobTitle || '', { color: 'FFE4E6', size: 26, font })], { after: 100 }),
+          paragraph([run([data.personalInfo.location, data.personalInfo.website].filter(Boolean).join('   |   '), { color: 'FFF1F2', size: 18, font })], { after: 0 }),
+        ], { width: 100, fill: primary, margins: { top: 560, bottom: 560, left: 540, right: 540 } }),
       ],
     }),
+  ]));
+
+  // About + Contact card split
+  const aboutCol: DocxNode[] = [
+    paragraph([run('About Me', { bold: true, color: primary, size: 28, font })], { after: 140, keepNext: true }),
+    paragraph([run(data.personalInfo.summary || '', { color: '4B5563', size: 22, font })], { after: 0 }),
+  ];
+  const contactCol: DocxNode[] = [
+    paragraph([run('Contact', { bold: true, color: '111827', size: 18, font, allCaps: true })], { after: 120 }),
+  ];
+  if (data.personalInfo.email) contactCol.push(paragraph([run(data.personalInfo.email, { color: '4B5563', size: 18, font })], { after: 60 }));
+  if (data.personalInfo.phone) contactCol.push(paragraph([run(data.personalInfo.phone, { color: '4B5563', size: 18, font })], { after: 60 }));
+  if (data.personalInfo.linkedin) contactCol.push(paragraph([run(data.personalInfo.linkedin, { color: '4B5563', size: 18, font })], { after: 60 }));
+  if (data.personalInfo.github) contactCol.push(paragraph([run(data.personalInfo.github, { color: '4B5563', size: 18, font })], { after: 0 }));
+
+  const inner: DocxNode[] = [
+    fullTable([
+      new TableRow({
+        children: [
+          tableCell(aboutCol, { width: 66, margins: { top: 0, bottom: 0, left: 0, right: 320 } }),
+          tableCell(contactCol, { width: 34, fill: cardFill, margins: { top: 240, bottom: 240, left: 320, right: 320 } }),
+        ],
+      }),
+    ]),
+    spacer(320),
   ];
 
-  const addRow = (label: string, content: DocxNode[]) => {
-    rows.push(new TableRow({
+  if (data.projects.length) {
+    inner.push(paragraph([run('Selected Works', { bold: true, color: primary, size: 36, font })], { after: 200, keepNext: true }));
+    const cells: TableCell[] = data.projects.map((proj) => {
+      const children: DocxNode[] = [];
+      children.push(paragraph([run(proj.name, { bold: true, color: '111827', size: 24, font })], { after: 80 }));
+      children.push(paragraph([run(proj.description, { color: '4B5563', size: 19, font })], { after: 120 }));
+      if (proj.technologies?.length) {
+        children.push(paragraph([run(proj.technologies.join('   •   '), { color: primary, size: 17, font })], { after: proj.link ? 80 : 0 }));
+      }
+      if (proj.link) {
+        children.push(paragraph([run(`View Project — ${proj.link}`, { bold: true, color: accent, size: 17, font })], { after: 0 }));
+      }
+      return tableCell(children, { width: 50, fill: cardFill, margins: { top: 300, bottom: 300, left: 300, right: 300 } });
+    });
+    const rows: TableRow[] = [];
+    for (let i = 0; i < cells.length; i += 2) {
+      rows.push(new TableRow({ children: [cells[i], cells[i + 1] ?? tableCell([], { width: 50, fill: pageFill })] }));
+    }
+    inner.push(fullTable(rows));
+    inner.push(spacer(320));
+  }
+
+  if (data.experience.length || data.skills.length || data.education.length) {
+    const expCol: DocxNode[] = [];
+    if (data.experience.length) {
+      expCol.push(paragraph([run('Experience', { bold: true, color: primary, size: 28, font })], { after: 160, keepNext: true }));
+      data.experience.forEach((exp, idx) => {
+        expCol.push(paragraph([run(exp.role, { bold: true, color: '111827', size: 21, font })], { after: 40, border: { left: { color: primary, size: 18 } }, indent: { left: 200 } }));
+        expCol.push(paragraph([
+          run(exp.company, { bold: true, color: accent, size: 18, font }),
+          run('   '),
+          run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '9CA3AF', size: 17, font }),
+        ], { after: 80, border: { left: { color: primary, size: 18 } }, indent: { left: 200 } }));
+        bulletList(splitLines(exp.description), { color: '4B5563', size: 18, font, indent: 360 }).forEach((b) => expCol.push(b));
+        if (idx < data.experience.length - 1) expCol.push(spacer(160));
+      });
+    }
+
+    const sideCol: DocxNode[] = [];
+    if (data.skills.length) {
+      sideCol.push(paragraph([run('Expertise', { bold: true, color: primary, size: 28, font })], { after: 160, keepNext: true }));
+      const grid = pillGrid(data.skills, {
+        textColor: '374151',
+        fillColor: 'FFFFFF',
+        borderColor: 'E5E7EB',
+        font,
+        size: 17,
+        columns: 2,
+      });
+      if (grid) sideCol.push(grid);
+      sideCol.push(spacer(240));
+    }
+    if (data.education.length) {
+      sideCol.push(paragraph([run('Education', { bold: true, color: primary, size: 28, font })], { after: 160, keepNext: true }));
+      data.education.forEach((edu, idx) => {
+        sideCol.push(paragraph([run(edu.degree, { bold: true, color: '111827', size: 20, font })], { after: 30, shading: cardFill, indent: { left: 160, right: 160 } }));
+        sideCol.push(paragraph([run(edu.institution, { color: '4B5563', size: 18, font })], { after: 30, shading: cardFill, indent: { left: 160, right: 160 } }));
+        sideCol.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '9CA3AF', size: 16, font })], { after: idx < data.education.length - 1 ? 120 : 0, shading: cardFill, indent: { left: 160, right: 160 } }));
+      });
+    }
+
+    inner.push(fullTable([
+      new TableRow({
+        children: [
+          tableCell(expCol, { width: 50, margins: { top: 0, bottom: 0, left: 0, right: 320 } }),
+          tableCell(sideCol, { width: 50, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+        ],
+      }),
+    ]));
+  }
+
+  nodes.push(fullTable([
+    new TableRow({
       children: [
-        cell([para([text(label, { bold: true, color: ctx.primary, size: 19, font: ctx.font, allCaps: true })], { align: 'RIGHT' })], { width: 25 }),
-        cell(content, { width: 75 }),
+        tableCell(inner, { width: 100, fill: pageFill, margins: { top: 600, bottom: 600, left: 540, right: 540 } }),
       ],
-    }));
-  };
-
-  addRow('Personal Info', contactItems(data).map((item) => para([text(item, { size: 19, font: ctx.font })], { after: 35 })));
-  if (data.personalInfo.summary) addRow('Summary', [para([text(data.personalInfo.summary, { size: 20, font: ctx.font })])]);
-  if (data.experience.length) addRow('Work Experience', experienceBlocks(ctx));
-  if (data.education.length) addRow('Education', educationBlocks(ctx));
-  if (data.projects.length) addRow('Projects', projectBlocks(ctx, true));
-  if (data.skills.length) addRow('Skills', [para([text(data.skills.join(', '), { size: 20, font: ctx.font })])]);
-
-  return [table(rows)];
-}
-
-function buildEngineersAustralia(ctx: TemplateContext) {
-  const data = ctx.data;
-  const nodes: DocxNode[] = [
-    para([text(data.personalInfo.fullName, { bold: true, color: ctx.primary, size: 34, font: ctx.font, allCaps: true })], { align: 'CENTER', after: 120 }),
-    table([
-      new TableRow({
-        children: [
-          cell([para([text('Address:', { bold: true, color: ctx.accent, font: ctx.font })], { align: 'RIGHT' })], { width: 35, margins: 30 }),
-          cell([para([text(data.personalInfo.location || '', { font: ctx.font })])], { width: 65, margins: 30 }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          cell([para([text('Phone:', { bold: true, color: ctx.accent, font: ctx.font })], { align: 'RIGHT' })], { width: 35, margins: 30 }),
-          cell([para([text(data.personalInfo.phone || '', { font: ctx.font })])], { width: 65, margins: 30 }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          cell([para([text('Email:', { bold: true, color: ctx.accent, font: ctx.font })], { align: 'RIGHT' })], { width: 35, margins: 30 }),
-          cell([para([text(data.personalInfo.email || '', { font: ctx.font })])], { width: 65, margins: 30 }),
-        ],
-      }),
-    ], 70),
-  ];
-
-  if (data.personalInfo.summary) nodes.push(sectionHeading('Career Objective', ctx), para([text(data.personalInfo.summary, { size: 20, font: ctx.font })]));
-  if (data.education.length) nodes.push(sectionHeading('Academic Qualifications', ctx), ...educationBlocks(ctx));
-  if (data.skills.length) nodes.push(sectionHeading('Software & Technical Skills', ctx), ...data.skills.map((skill) => bullet(skill, ctx)));
-  if (data.experience.length) nodes.push(sectionHeading('Employment History', ctx), ...experienceBlocks(ctx, 'company-first'));
-  if (data.projects.length) nodes.push(sectionHeading('Key Projects', ctx), ...projectBlocks(ctx, true));
+    }),
+  ]));
 
   return nodes;
 }
 
-function buildPortfolio(ctx: TemplateContext) {
-  const data = ctx.data;
-  const projectCells = data.projects.map((project) => cell([
-    para([text(project.name, { bold: true, color: '111827', size: 23, font: ctx.font })], { after: 60 }),
-    para([text(project.description, { color: '4B5563', size: 19, font: ctx.font })], { after: 80 }),
-    para([text(project.technologies.join(', '), { color: ctx.primary, size: 17, font: ctx.font })]),
-  ], { width: 50, fill: 'FFFFFF', margins: 180 }));
+/* =====================================================================
+ * DEVELOPER PORTFOLIO TEMPLATE
+ * Whole page dark navy (#0F172A). Monospace font (Consolas).
+ * Terminal-bar at top, hero with name + "> jobTitle", terminal-style
+ * key: value contact. Each section: "$ command" header, cards.
+ * ===================================================================== */
+function buildDeveloper(ctx: BuildContext): DocxNode[] {
+  const { data } = ctx;
+  const { primary, accent } = ctx.palette;
+  const font = 'Consolas';
+  const pageFill = '0F172A';
+  const cardFill = '1E293B';
+  const cardFillSoft = '111827';
+  const textLight = 'E2E8F0';
+  const textDim = '94A3B8';
+  const textSoft = '64748B';
 
-  const projectRows: TableRow[] = [];
-  for (let index = 0; index < projectCells.length; index += 2) {
-    projectRows.push(new TableRow({ children: [projectCells[index], projectCells[index + 1] || cell([], { width: 50, fill: 'FFFFFF' })] }));
+  const inner: DocxNode[] = [];
+
+  // Terminal title bar
+  inner.push(fullTable([
+    new TableRow({
+      children: [
+        tableCell([
+          paragraph([
+            run('●  ●  ●     ', { color: 'F87171', size: 18, font }),
+            run(`~/portfolio/${(data.personalInfo.fullName || '').toLowerCase().replace(/\s+/g, '-')}`, { color: textSoft, size: 17, font }),
+          ], { after: 0 }),
+        ], { width: 100, fill: cardFillSoft, margins: { top: 140, bottom: 140, left: 280, right: 280 } }),
+      ],
+    }),
+  ]));
+  inner.push(spacer(320));
+
+  // Hero
+  inner.push(paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'F8FAFC', size: 38, font })], { after: 60 }));
+  inner.push(paragraph([run(`> ${data.personalInfo.jobTitle || ''}`, { color: accent, size: 24, font })], { after: 200 }));
+
+  const contactLines: Array<[string, string]> = [];
+  if (data.personalInfo.email) contactLines.push(['email', data.personalInfo.email]);
+  if (data.personalInfo.location) contactLines.push(['location', data.personalInfo.location]);
+  if (data.personalInfo.github) contactLines.push(['github', data.personalInfo.github]);
+  if (data.personalInfo.linkedin) contactLines.push(['linkedin', data.personalInfo.linkedin]);
+  contactLines.forEach(([k, v]) => {
+    inner.push(paragraph([
+      run(`${k}: `, { color: textSoft, size: 18, font }),
+      run(v, { color: textLight, size: 18, font }),
+    ], { after: 60 }));
+  });
+
+  inner.push(paragraph([''], { after: 200, border: { bottom: { color: '334155', size: 6 } } }));
+  inner.push(spacer(160));
+
+  const command = (cmd: string): Paragraph =>
+    paragraph([
+      run('$ ', { bold: true, color: primary, size: 22, font }),
+      run(cmd, { bold: true, color: 'F8FAFC', size: 22, font }),
+    ], { after: 160, keepNext: true });
+
+  if (data.personalInfo.summary) {
+    inner.push(command('cat about.txt'));
+    inner.push(paragraph([run(data.personalInfo.summary, { color: textDim, size: 19, font })], { after: 0, border: { left: { color: '334155', size: 12 } }, indent: { left: 240 } }));
+    inner.push(spacer(280));
   }
 
-  const nodes: DocxNode[] = [
-    para([text(data.personalInfo.fullName, { bold: true, color: '111827', size: 44, font: ctx.font })], { align: 'CENTER', after: 60 }),
-    para([text(data.personalInfo.jobTitle, { color: ctx.primary, size: 26, font: ctx.font })], { align: 'CENTER', after: 90 }),
-    para([text(data.personalInfo.summary, { color: '4B5563', size: 21, font: ctx.font })], { align: 'CENTER', after: 120 }),
-    para([text(contactItems(data).join(' | '), { color: ctx.primary, size: 18, font: ctx.font })], { align: 'CENTER', after: 240 }),
-  ];
-
-  if (projectRows.length) nodes.push(sectionHeading('Featured Work', ctx, { border: false }), table(projectRows));
-  if (data.experience.length || data.skills.length || data.education.length) {
-    nodes.push(table([
-      new TableRow({
-        children: [
-          cell([
-            ...(data.experience.length ? [sectionHeading('Experience', ctx, { border: false }), ...experienceBlocks(ctx)] : []),
-          ], { width: 65, margins: 120 }),
-          cell([
-            ...(data.skills.length ? [sectionHeading('Skills', ctx, { border: false }), para([text(data.skills.join(', '), { font: ctx.font, size: 20 })])] : []),
-            ...(data.education.length ? [sectionHeading('Education', ctx, { border: false }), ...educationBlocks(ctx, true)] : []),
-          ], { width: 35, margins: 120 }),
-        ],
-      }),
-    ]));
+  if (data.skills.length) {
+    inner.push(command('ls ./skills'));
+    const grid = pillGrid(data.skills, {
+      textColor: textLight,
+      fillColor: '1E293B',
+      borderColor: '334155',
+      font,
+      size: 16,
+      columns: 4,
+    });
+    if (grid) inner.push(grid);
+    inner.push(spacer(280));
   }
 
-  return nodes;
-}
+  if (data.projects.length) {
+    inner.push(command('./run_projects.sh'));
+    data.projects.forEach((proj, idx) => {
+      const cardChildren: DocxNode[] = [];
+      const head: TextRun[] = [run(`<> ${proj.name}`, { bold: true, color: 'F8FAFC', size: 21, font })];
+      if (proj.link) {
+        head.push(run('     '));
+        head.push(run(`[source: ${proj.link}]`, { color: accent, size: 17, font }));
+      }
+      cardChildren.push(paragraph(head, { after: 100 }));
+      cardChildren.push(paragraph([run(proj.description, { color: textDim, size: 18, font })], { after: proj.technologies?.length ? 120 : 0 }));
+      if (proj.technologies?.length) {
+        cardChildren.push(paragraph([run(proj.technologies.join('   '), { color: textSoft, size: 16, font, allCaps: true })]));
+      }
+      inner.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell(cardChildren, { width: 100, fill: cardFill, margins: { top: 280, bottom: 280, left: 320, right: 320 } }),
+          ],
+        }),
+      ], 98));
+      if (idx < data.projects.length - 1) inner.push(spacer(160));
+    });
+    inner.push(spacer(280));
+  }
 
-function buildCreative(ctx: TemplateContext) {
-  const data = ctx.data;
-  const nodes: DocxNode[] = [
-    table([
+  if (data.experience.length) {
+    inner.push(command('tail -f experience.log'));
+    data.experience.forEach((exp, idx) => {
+      inner.push(paragraph([
+        run(exp.role, { bold: true, color: 'F8FAFC', size: 20, font }),
+        run('     '),
+        run(`[${[exp.startDate, exp.endDate].filter(Boolean).join(' - ')}]`, { color: textSoft, size: 16, font }),
+      ], { after: 40, border: { left: { color: primary, size: 12 } }, indent: { left: 240 } }));
+      inner.push(paragraph([run(`@ ${exp.company}`, { color: accent, size: 18, font })], { after: 80, border: { left: { color: primary, size: 12 } }, indent: { left: 240 } }));
+      splitLines(exp.description).forEach((line) => {
+        inner.push(paragraph([
+          run('> ', { color: textSoft, size: 18, font }),
+          run(line, { color: textDim, size: 18, font }),
+        ], { after: 40, border: { left: { color: primary, size: 12 } }, indent: { left: 360 } }));
+      });
+      if (idx < data.experience.length - 1) inner.push(spacer(180));
+    });
+    inner.push(spacer(280));
+  }
+
+  if (data.education.length) {
+    inner.push(command('cat education.json'));
+    data.education.forEach((edu, idx) => {
+      const cardChildren: DocxNode[] = [
+        paragraph([run(edu.degree, { bold: true, color: textLight, size: 19, font })], { after: 30 }),
+        paragraph([run(edu.institution, { color: textDim, size: 18, font })], { after: 30 }),
+        paragraph([run(`/* ${[edu.startDate, edu.endDate].filter(Boolean).join(' - ')} */`, { color: textSoft, size: 16, font })]),
+      ];
+      inner.push(fullTable([
+        new TableRow({
+          children: [
+            tableCell(cardChildren, { width: 100, fill: cardFill, margins: { top: 220, bottom: 220, left: 320, right: 320 } }),
+          ],
+        }),
+      ], 98));
+      if (idx < data.education.length - 1) inner.push(spacer(140));
+    });
+  }
+
+  return [
+    fullTable([
       new TableRow({
         children: [
-          cell([
-            para([text(data.personalInfo.fullName, { bold: true, color: 'FFFFFF', size: 42, font: ctx.font })], { after: 55 }),
-            para([text(data.personalInfo.jobTitle, { color: 'FFE4E6', size: 25, font: ctx.font })], { after: 70 }),
-            para([text([data.personalInfo.location, data.personalInfo.website].filter(Boolean).join(' | '), { color: 'FFF1F2', size: 18, font: ctx.font })]),
-          ], { width: 100, fill: ctx.primary, margins: 330 }),
+          tableCell(inner, { width: 100, fill: pageFill, margins: { top: 480, bottom: 480, left: 540, right: 540 } }),
         ],
       }),
     ]),
-    table([
-      new TableRow({
-        children: [
-          cell([
-            sectionHeading('About Me', ctx, { border: false }),
-            para([text(data.personalInfo.summary, { color: '4B5563', size: 21, font: ctx.font })]),
-          ], { width: 66, fill: 'FAFAFA', margins: 220 }),
-          cell([
-            sectionHeading('Contact', { ...ctx, primary: '111827' }, { compact: true, border: false }),
-            ...contactItems(data).map((item) => para([text(item, { color: '4B5563', size: 18, font: ctx.font })], { after: 45 })),
-          ], { width: 34, fill: 'FFFFFF', margins: 220 }),
-        ],
-      }),
-    ]),
   ];
-
-  if (data.projects.length) nodes.push(sectionHeading('Selected Works', ctx, { border: false }), ...projectBlocks(ctx, true));
-  if (data.experience.length || data.skills.length || data.education.length) {
-    nodes.push(table([
-      new TableRow({
-        children: [
-          cell(data.experience.length ? [sectionHeading('Experience', ctx, { border: false }), ...experienceBlocks(ctx)] : [], { width: 50, margins: 160 }),
-          cell([
-            ...(data.skills.length ? [sectionHeading('Expertise', ctx, { border: false }), para([text(data.skills.join(', '), { font: ctx.font, size: 20 })])] : []),
-            ...(data.education.length ? [sectionHeading('Education', ctx, { border: false }), ...educationBlocks(ctx, true)] : []),
-          ], { width: 50, margins: 160 }),
-        ],
-      }),
-    ]));
-  }
-
-  return nodes;
 }
 
-function buildDeveloper(ctx: TemplateContext) {
-  const data = ctx.data;
-  const darkCtx = { ...ctx, primary: ctx.primary, accent: ctx.accent, font: 'Consolas' };
-  const lineColor = 'CBD5E1';
-  const nodes: DocxNode[] = [
-    table([
-      new TableRow({
-        children: [
-          cell([
-            para([text('●  ●  ●   ~/portfolio/' + data.personalInfo.fullName.toLowerCase().replace(/\s+/g, '-'), { color: '94A3B8', size: 17, font: darkCtx.font })], { after: 160 }),
-            para([text(data.personalInfo.fullName, { bold: true, color: 'F8FAFC', size: 36, font: darkCtx.font })], { after: 45 }),
-            para([text(`> ${data.personalInfo.jobTitle}`, { color: ctx.accent, size: 23, font: darkCtx.font })], { after: 140 }),
-            ...[data.personalInfo.email, data.personalInfo.location, data.personalInfo.github, data.personalInfo.linkedin].filter(Boolean).map((item) => para([text(item as string, { color: lineColor, size: 18, font: darkCtx.font })], { after: 40 })),
-          ], { width: 100, fill: '0F172A', margins: 260 }),
-        ],
-      }),
-    ]),
-  ];
-
-  const addCommand = (command: string, content: DocxNode[]) => {
-    nodes.push(table([
-      new TableRow({
-        children: [
-          cell([
-            para([text(`$ ${command}`, { bold: true, color: 'F8FAFC', size: 22, font: darkCtx.font })], { after: 110 }),
-            ...content,
-          ], { width: 100, fill: '111827', margins: 210 }),
-        ],
-      }),
-    ]));
-  };
-
-  if (data.personalInfo.summary) addCommand('cat about.txt', [para([text(data.personalInfo.summary, { color: lineColor, size: 19, font: darkCtx.font })])]);
-  if (data.skills.length) addCommand('ls ./skills', [para([text(data.skills.join('   '), { color: lineColor, size: 18, font: darkCtx.font })])]);
-  if (data.projects.length) addCommand('./run_projects.sh', projectBlocks({ ...darkCtx, primary: ctx.primary, accent: ctx.accent }, true).map((node) => node));
-  if (data.experience.length) addCommand('tail -f experience.log', experienceBlocks({ ...darkCtx, primary: ctx.primary, accent: ctx.accent }));
-  if (data.education.length) addCommand('cat education.json', educationBlocks({ ...darkCtx, primary: ctx.primary, accent: ctx.accent }, true));
-
-  return nodes;
-}
-
-function buildDocument(ctx: TemplateContext, template: DocxTemplate) {
-  switch (template) {
-    case 'modern':
-      return buildModern(ctx);
-    case 'portfolio':
-      return buildPortfolio(ctx);
-    case 'europass':
-      return buildEuropass(ctx);
-    case 'harvard':
-      return buildHarvard(ctx);
-    case 'engineersaustralia':
-      return buildEngineersAustralia(ctx);
-    case 'creative':
-      return buildCreative(ctx);
-    case 'developer':
-      return buildDeveloper(ctx);
+/* =====================================================================
+ * Dispatch + Page Setup
+ * ===================================================================== */
+function buildDocument(ctx: BuildContext): DocxNode[] {
+  switch (ctx.template) {
+    case 'modern': return buildModern(ctx);
+    case 'portfolio': return buildPortfolio(ctx);
+    case 'europass': return buildEuropass(ctx);
+    case 'harvard': return buildHarvard(ctx);
+    case 'engineersaustralia': return buildEngineersAustralia(ctx);
+    case 'creative': return buildCreative(ctx);
+    case 'developer': return buildDeveloper(ctx);
     case 'minimal':
-    default:
-      return buildMinimal(ctx);
+    default: return buildMinimal(ctx);
   }
 }
 
-function fontForTemplate(template: DocxTemplate) {
-  if (template === 'harvard') return 'Times New Roman';
-  if (template === 'developer') return 'Consolas';
-  return 'Aptos';
+function paletteForTemplate(data: ResumeData, template: DocxTemplate): PaletteColors {
+  const fontByTemplate: Record<DocxTemplate, string> = {
+    minimal: 'Aptos',
+    modern: 'Aptos',
+    portfolio: 'Aptos',
+    europass: 'Aptos',
+    harvard: 'Times New Roman',
+    engineersaustralia: 'Aptos',
+    creative: 'Aptos',
+    developer: 'Consolas',
+  };
+  const defaults: Record<DocxTemplate, { primary: string; accent: string }> = {
+    minimal: { primary: '2563EB', accent: '3B82F6' },
+    modern: { primary: '1E293B', accent: '3B82F6' },
+    portfolio: { primary: '2563EB', accent: '3B82F6' },
+    europass: { primary: '004494', accent: '0056B3' },
+    harvard: { primary: '000000', accent: '333333' },
+    engineersaustralia: { primary: '111827', accent: '374151' },
+    creative: { primary: 'F43F5E', accent: 'FB7185' },
+    developer: { primary: '10B981', accent: '34D399' },
+  };
+  const d = defaults[template];
+  return {
+    primary: hex(data.theme?.primary, d.primary),
+    accent: hex(data.theme?.accent, d.accent),
+    font: fontByTemplate[template],
+    bodyFont: fontByTemplate[template],
+  };
+}
+
+interface PageMargins { top: number; right: number; bottom: number; left: number; }
+
+function pageMarginsForTemplate(template: DocxTemplate): PageMargins {
+  // Edge-to-edge templates: zero margins so colored sidebars/banners fill the page.
+  const edgeToEdge: DocxTemplate[] = ['modern', 'europass', 'creative', 'developer', 'portfolio'];
+  if (edgeToEdge.includes(template)) {
+    return {
+      top: convertInchesToTwip(0),
+      right: convertInchesToTwip(0),
+      bottom: convertInchesToTwip(0),
+      left: convertInchesToTwip(0),
+    };
+  }
+  // Standard letter-margin templates
+  return {
+    top: convertInchesToTwip(0.7),
+    right: convertInchesToTwip(0.7),
+    bottom: convertInchesToTwip(0.7),
+    left: convertInchesToTwip(0.7),
+  };
 }
 
 export async function exportResumeDocx(data: ResumeData, template: DocxTemplate) {
-  const ctx: TemplateContext = {
-    data,
-    primary: hexColor(data.theme?.primary, template === 'harvard' ? '000000' : '2563EB'),
-    accent: hexColor(data.theme?.accent, template === 'developer' ? '34D399' : '3B82F6'),
-    font: fontForTemplate(template),
-  };
+  const palette = paletteForTemplate(data, template);
+  const ctx: BuildContext = { data, template, palette };
+  const margin = pageMarginsForTemplate(template);
 
-  if (template === 'modern') {
-    ctx.primary = tint(ctx.primary, '1E293B');
-  }
+  const isDark = template === 'developer';
+  const defaultColor = isDark ? 'E2E8F0' : '1F2937';
 
   const document = new Document({
     creator: 'Resume Builder',
@@ -510,9 +1313,9 @@ export async function exportResumeDocx(data: ResumeData, template: DocxTemplate)
       default: {
         document: {
           run: {
-            font: ctx.font,
+            font: palette.font,
             size: 20,
-            color: template === 'developer' ? 'CBD5E1' : '1F2937',
+            color: defaultColor,
           },
           paragraph: {
             spacing: { line: 260 },
@@ -525,18 +1328,14 @@ export async function exportResumeDocx(data: ResumeData, template: DocxTemplate)
         properties: {
           page: {
             size: {
+              orientation: PageOrientation.PORTRAIT,
               width: convertInchesToTwip(8.27),
               height: convertInchesToTwip(11.69),
             },
-            margin: {
-              top: convertInchesToTwip(0.55),
-              right: convertInchesToTwip(0.62),
-              bottom: convertInchesToTwip(0.55),
-              left: convertInchesToTwip(0.62),
-            },
+            margin,
           },
         },
-        children: buildDocument(ctx, template),
+        children: buildDocument(ctx),
       },
     ],
   });
