@@ -29,6 +29,10 @@ function stripEmpty(obj: any): any {
   return obj;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [isParsing, setIsParsing] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -52,7 +56,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       });
     } catch (error) {
       console.error(error);
-      alert("Failed to tailor resume. Please try again.");
+      alert(getErrorMessage(error, "Failed to tailor resume. Please try again."));
     } finally {
       setIsTailoring(false);
     }
@@ -112,7 +116,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.currentTarget.files ?? []) as File[];
     if (files.length === 0) return;
     
     setIsParsing(true);
@@ -150,18 +154,10 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       
       const processedFiles = await Promise.all(filePromises);
       const parsedData = await parseDocumentAI(data, processedFiles);
-      
-      // Preserve profile picture if it exists and wasn't updated
-      if (!parsedData.personalInfo) {
-        parsedData.personalInfo = {};
-      }
-      if (data.personalInfo?.profilePicture && !parsedData.personalInfo.profilePicture) {
-        parsedData.personalInfo.profilePicture = data.personalInfo.profilePicture;
-      }
       onChange(parsedData);
     } catch (error) {
       console.error("Failed to parse documents", error);
-      alert("Failed to parse documents. Please try again.");
+      alert(getErrorMessage(error, "Failed to parse documents. Please try again."));
     } finally {
       setIsParsing(false);
     }
@@ -172,20 +168,17 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     setIsParsing(true);
     try {
       const parsedData = await parseDocumentAI(data, undefined, documentUrl);
-      if (!parsedData.personalInfo) {
-        parsedData.personalInfo = {};
-      }
-      if (data.personalInfo?.profilePicture && !parsedData.personalInfo.profilePicture) {
-        parsedData.personalInfo.profilePicture = data.personalInfo.profilePicture;
-      }
       onChange(parsedData);
       setDocumentUrl('');
     } catch (error) {
       console.error("Failed to parse URL", error);
-      if (documentUrl.includes('linkedin.com')) {
+      const message = getErrorMessage(error, "Failed to extract data from URL. Please try again.");
+      if (message.includes('Gemini API key')) {
+        alert(message);
+      } else if (documentUrl.includes('linkedin.com')) {
         alert("Failed to extract data from LinkedIn. LinkedIn blocks automated access. Please go to your LinkedIn profile, click 'More' -> 'Save to PDF', and upload the PDF instead.");
       } else {
-        alert("Failed to extract data from URL. Please try again.");
+        alert(message);
       }
     } finally {
       setIsParsing(false);
@@ -204,7 +197,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       }
     } catch (error) {
       console.error(error);
-      alert("Failed to generate summary.");
+      alert(getErrorMessage(error, "Failed to generate summary."));
     }
     setIsGeneratingSummary(false);
   };
@@ -219,7 +212,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       }
     } catch (error) {
       console.error(error);
-      alert("Failed to generate project description.");
+      alert(getErrorMessage(error, "Failed to generate project description."));
     }
     setGeneratingProjectIndex(null);
   };

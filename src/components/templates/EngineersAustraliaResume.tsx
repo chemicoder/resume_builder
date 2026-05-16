@@ -7,7 +7,7 @@ export default function EngineersAustraliaResume({ data }: { data: ResumeData })
   const accentColor = data.theme?.accent || '#374151';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-gray-900 font-sans text-sm leading-relaxed">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-gray-900 font-sans text-sm leading-relaxed">
       {/* Header */}
       <header className="mb-8 border-b-2 pb-4 flex justify-between items-start" style={{ borderColor: primaryColor }}>
         <div className="flex-1">

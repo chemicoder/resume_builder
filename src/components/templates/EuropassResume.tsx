@@ -8,7 +8,7 @@ export default function EuropassResume({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#0056b3';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] font-sans text-gray-800">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] font-sans text-gray-800">
       {/* Header */}
       <header className="text-white p-8 flex items-center justify-between gap-6" style={{ backgroundColor: primaryColor }}>
         <div className="flex items-center gap-6">

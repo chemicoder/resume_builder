@@ -8,7 +8,7 @@ export default function CreativePortfolio({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#fb7185';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-[#fafafa] shadow-lg min-h-[1056px] text-gray-800 font-sans overflow-hidden">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-[#fafafa] shadow-lg min-h-[1056px] text-gray-800 font-sans overflow-hidden">
       {/* Hero Section */}
       <div className="relative p-12 text-white overflow-hidden" style={{ backgroundColor: primaryColor }}>
         {/* Decorative circle */}

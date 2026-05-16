@@ -7,7 +7,7 @@ export default function HarvardResume({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#333333';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-black font-serif relative">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-black font-serif relative">
       {/* QR Code */}
       {data.showQrCode && data.qrCodeLink && (
         <div className="absolute top-12 right-12">

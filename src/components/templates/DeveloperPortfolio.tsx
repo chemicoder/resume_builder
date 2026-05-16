@@ -8,7 +8,7 @@ export default function DeveloperPortfolio({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#34d399';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-[#0f172a] shadow-2xl min-h-[1056px] text-slate-300 font-mono overflow-hidden border border-slate-800 rounded-lg">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-[#0f172a] shadow-2xl min-h-[1056px] text-slate-300 font-mono overflow-hidden border border-slate-800 rounded-lg">
       {/* Terminal Header */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-red-500"></div>

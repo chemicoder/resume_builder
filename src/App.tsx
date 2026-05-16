@@ -10,10 +10,8 @@ import HarvardResume from './components/templates/HarvardResume';
 import EngineersAustraliaResume from './components/templates/EngineersAustraliaResume';
 import CreativePortfolio from './components/templates/CreativePortfolio';
 import DeveloperPortfolio from './components/templates/DeveloperPortfolio';
-import { Printer, LayoutTemplate, Download, Undo, Redo } from 'lucide-react';
+import { LayoutTemplate, Download, Undo, Redo } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { toPng } from 'html-to-image';
-import { jsPDF } from 'jspdf';
 import LZString from 'lz-string';
 
 type TemplateType = 'minimal' | 'modern' | 'portfolio' | 'europass' | 'harvard' | 'engineersaustralia' | 'creative' | 'developer';
@@ -88,53 +86,22 @@ export default function App() {
   const handleExportPdf = async () => {
     if (!componentRef.current) return;
     
-    const element = componentRef.current;
-    
     try {
-      // html-to-image handles modern CSS (like oklch) much better than html2canvas
-      const dataUrl = await toPng(element, { 
-        quality: 0.98, 
-        pixelRatio: 2,
-        // Ensure background is white
-        backgroundColor: '#ffffff',
-        width: element.scrollWidth,
-        height: element.scrollHeight,
-        style: {
-          transform: 'none',
-          margin: '0'
-        }
-      });
-      
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: 'a4'
-      });
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
-      
-      pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdfHeight;
-      
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
-      }
-      
-      pdf.save(`${data.personalInfo.fullName.replace(/\s+/g, '_')}_Resume.pdf`);
+      const { exportResumePdf } = await import('./lib/exportPdf');
+      await exportResumePdf(componentRef.current, data.personalInfo.fullName);
     } catch (error) {
       console.error('Failed to generate PDF', error);
-      // Fallback
-      window.print();
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const handleExportDocx = async () => {
+    try {
+      const { exportResumeDocx } = await import('./lib/exportDocx');
+      await exportResumeDocx(data, template);
+    } catch (error) {
+      console.error('Failed to generate DOCX', error);
+      alert('Failed to generate Word document. Please try again.');
     }
   };
 
@@ -272,12 +239,19 @@ export default function App() {
               <Download size={18} />
               Export PDF
             </button>
+            <button
+              onClick={handleExportDocx}
+              className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-sm"
+            >
+              <Download size={18} />
+              Export DOCX
+            </button>
           </div>
         </header>
 
         {/* Preview Area */}
         <div className="flex-1 overflow-y-auto p-8 bg-gray-200/50 flex justify-center print:bg-white print:p-0 print:overflow-visible">
-          <div ref={componentRef} className="w-full max-w-[1000px] transition-all duration-300 ease-in-out print:max-w-none print:w-full">
+          <div className="w-full max-w-[1000px] transition-all duration-300 ease-in-out print:max-w-none print:w-full">
             <AnimatePresence mode="wait">
               <motion.div
                 key={template}
@@ -288,7 +262,9 @@ export default function App() {
                 className="print:shadow-none print:m-0"
               >
                 <div className="print:w-full print:h-full">
-                  {renderTemplate()}
+                  <div ref={componentRef} data-resume-export-container>
+                    {renderTemplate()}
+                  </div>
                 </div>
               </motion.div>
             </AnimatePresence>

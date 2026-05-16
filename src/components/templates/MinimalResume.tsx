@@ -8,7 +8,7 @@ export default function MinimalResume({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#3b82f6';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-white p-10 shadow-lg min-h-[1056px] text-gray-800 font-sans">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-10 shadow-lg min-h-[1056px] text-gray-800 font-sans">
       {/* Header */}
       <header className="border-b-2 pb-6 mb-6 flex justify-between items-start" style={{ borderColor: primaryColor }}>
         <div>

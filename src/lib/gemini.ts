@@ -1,10 +1,56 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { ResumeData } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+const geminiApiKey = viteEnv?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+
+function getAiClient() {
+  if (!geminiApiKey) {
+    throw new Error('Gemini API key is not configured. Add VITE_GEMINI_API_KEY to .env.local to enable AI features.');
+  }
+
+  return new GoogleGenAI({ apiKey: geminiApiKey });
+}
+
+function localSummary(jobTitle: string, skills: string[], experience: any[]) {
+  const topSkills = skills.filter(Boolean).slice(0, 5).join(', ');
+  const latestRole = experience?.[0]?.role ? `${experience[0].role}${experience[0].company ? ` at ${experience[0].company}` : ''}` : jobTitle;
+  return `${jobTitle || 'Professional'} with experience as ${latestRole}. Skilled in ${topSkills || 'cross-functional collaboration, problem solving, and delivery'}. Focused on measurable outcomes, clear communication, and building reliable solutions.`;
+}
+
+function localProjectDescription(name: string, tech: string[]) {
+  const stack = tech.filter(Boolean).join(', ');
+  return `Built ${name || 'a project'}${stack ? ` using ${stack}` : ''}, focusing on practical user workflows, maintainable implementation, and reliable delivery.`;
+}
+
+function mergeResumeData(base: ResumeData, parsed: Partial<ResumeData>): ResumeData {
+  return {
+    ...base,
+    ...parsed,
+    personalInfo: {
+      ...base.personalInfo,
+      ...(parsed.personalInfo || {}),
+    },
+    experience: parsed.experience || base.experience || [],
+    education: parsed.education || base.education || [],
+    skills: parsed.skills || base.skills || [],
+    projects: parsed.projects || base.projects || [],
+    theme: {
+      ...base.theme,
+      ...(parsed.theme || {}),
+    },
+    showQrCode: parsed.showQrCode ?? base.showQrCode,
+    qrCodeLink: parsed.qrCodeLink ?? base.qrCodeLink,
+  };
+}
 
 export async function generateSummaryAI(jobTitle: string, skills: string[], experience: any[]) {
+  if (!geminiApiKey) {
+    return localSummary(jobTitle, skills, experience);
+  }
+
   const prompt = `Write a professional resume summary for a ${jobTitle}. Skills: ${skills.join(', ')}. Experience highlights: ${experience.map(e => e.role + ' at ' + e.company).join(', ')}. Keep it concise, impactful, and under 4 sentences.`;
+  const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
@@ -13,7 +59,12 @@ export async function generateSummaryAI(jobTitle: string, skills: string[], expe
 }
 
 export async function generateProjectDescriptionAI(name: string, tech: string[]) {
+  if (!geminiApiKey) {
+    return localProjectDescription(name, tech);
+  }
+
   const prompt = `Write a professional resume project description for a project named "${name}" using technologies: ${tech.join(', ')}. Keep it concise, action-oriented, and under 3 sentences.`;
+  const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
@@ -22,6 +73,7 @@ export async function generateProjectDescriptionAI(name: string, tech: string[])
 }
 
 export async function parseDocumentAI(currentData: ResumeData, files?: { base64: string, mimeType: string }[], url?: string): Promise<ResumeData> {
+  const ai = getAiClient();
   const dataForPrompt = { ...currentData };
   if (dataForPrompt.personalInfo) {
     dataForPrompt.personalInfo = { ...dataForPrompt.personalInfo };
@@ -134,13 +186,7 @@ Extract any relevant new information from the provided document(s)/link and retu
   
   try {
     const parsed = JSON.parse(response.text || "{}") as Partial<ResumeData>;
-    return {
-      personalInfo: parsed.personalInfo || {},
-      experience: parsed.experience || [],
-      education: parsed.education || [],
-      skills: parsed.skills || [],
-      projects: parsed.projects || []
-    } as ResumeData;
+    return mergeResumeData(currentData, parsed);
   } catch (e) {
     console.error("Failed to parse AI response as JSON", e);
     console.log("Raw response:", response.text);
@@ -149,6 +195,7 @@ Extract any relevant new information from the provided document(s)/link and retu
 }
 
 export async function tailorResumeAI(currentData: ResumeData, jobDescription: string, jobUrl?: string): Promise<{ updatedResume: ResumeData, atsScore: number }> {
+  const ai = getAiClient();
   const dataForPrompt = { ...currentData };
   if (dataForPrompt.personalInfo) {
     dataForPrompt.personalInfo = { ...dataForPrompt.personalInfo };
@@ -263,13 +310,7 @@ Your task:
     const result = JSON.parse(response.text || "{}");
     const parsedResume = result.updatedResume || {};
     return {
-      updatedResume: {
-        personalInfo: parsedResume.personalInfo || {},
-        experience: parsedResume.experience || [],
-        education: parsedResume.education || [],
-        skills: parsedResume.skills || [],
-        projects: parsedResume.projects || []
-      } as ResumeData,
+      updatedResume: mergeResumeData(currentData, parsedResume),
       atsScore: result.atsScore || 0
     };
   } catch (e) {

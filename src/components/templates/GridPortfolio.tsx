@@ -8,7 +8,7 @@ export default function GridPortfolio({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#3b82f6'; // blue-500
 
   return (
-    <div className="w-full max-w-[1000px] mx-auto bg-[#f8f9fa] shadow-xl min-h-[1056px] font-sans text-gray-800 p-8 md:p-12 relative">
+    <div data-resume-page className="w-full max-w-[1000px] mx-auto bg-[#f8f9fa] shadow-xl min-h-[1056px] font-sans text-gray-800 p-8 md:p-12 relative">
       {/* QR Code */}
       {data.showQrCode && data.qrCodeLink && (
         <div className="absolute top-8 right-8 bg-white p-2 rounded-lg shadow-md border border-gray-100 z-20">

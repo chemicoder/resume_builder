@@ -8,7 +8,7 @@ export default function ModernResume({ data }: { data: ResumeData }) {
   const accentColor = data.theme?.accent || '#3b82f6';
 
   return (
-    <div className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] flex font-sans text-gray-800">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] flex font-sans text-gray-800">
       {/* Left Column */}
       <div className="w-1/3 text-white p-8" style={{ backgroundColor: primaryColor }}>
         {data.personalInfo.profilePicture && (
