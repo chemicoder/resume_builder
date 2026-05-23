@@ -461,6 +461,118 @@ function CompactResume({ data, config }: { data: ResumeData; config: typeof vari
   );
 }
 
+function ExecutiveResume({ data, config }: { data: ResumeData; config: typeof variantConfig.executive }) {
+  return (
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+      <header className="px-12 pt-12 pb-8 border-b-[6px]" style={{ borderColor: config.accent }}>
+        <div className="flex justify-between gap-8">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] mb-3" style={{ color: config.accent }}>Executive Brief</div>
+            <h1 className="text-5xl font-black leading-tight mb-2">{data.personalInfo.fullName}</h1>
+            <h2 className="text-xl font-semibold" style={{ color: config.primary }}>{data.personalInfo.jobTitle}</h2>
+          </div>
+          <div className="w-56 text-right">
+            <ContactRow data={data} color={config.accent} compact />
+            {data.showQrCode && data.qrCodeLink && <div className="mt-4 flex justify-end"><QRCodeSVG value={data.qrCodeLink} size={64} fgColor={data.theme.qrCodeColor || config.primary} /></div>}
+          </div>
+        </div>
+      </header>
+
+      <div className="p-12 grid grid-cols-[255px_1fr] gap-10">
+        <aside className="space-y-8">
+          {data.personalInfo.summary && (
+            <section className="border p-5" style={{ borderColor: `${config.accent}55` }}>
+              <SectionTitle color={config.accent}>Profile</SectionTitle>
+              <p className="text-sm leading-relaxed">{data.personalInfo.summary}</p>
+            </section>
+          )}
+          <SideDetails data={data} color={config.primary} accent={config.accent} />
+        </aside>
+        <main className="space-y-8">
+          {data.experience.length > 0 && <section><SectionTitle color={config.primary} icon={Briefcase}>Leadership Experience</SectionTitle><ExperienceList data={data} color={config.primary} muted={config.muted} /></section>}
+          {data.projects.length > 0 && <section><SectionTitle color={config.primary} icon={Sparkles}>Strategic Work</SectionTitle><ProjectGrid data={data} color={config.primary} accent={config.accent} /></section>}
+          <References data={data} color={config.primary} />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function ArchitectResume({ data, config }: { data: ResumeData; config: typeof variantConfig.architect }) {
+  return (
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-10 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+      <div className="border-2 min-h-[1051px]" style={{ borderColor: config.primary }}>
+        <header className="grid grid-cols-[1fr_230px] border-b-2" style={{ borderColor: config.primary }}>
+          <div className="p-8">
+            <div className="text-xs uppercase tracking-[0.42em] mb-4" style={{ color: config.accent }}>Blueprint</div>
+            <h1 className="text-5xl font-black uppercase leading-none mb-4">{data.personalInfo.fullName}</h1>
+            <h2 className="text-lg font-semibold" style={{ color: config.primary }}>{data.personalInfo.jobTitle}</h2>
+          </div>
+          <div className="p-6 border-l-2 text-xs" style={{ borderColor: config.primary }}>
+            <ContactRow data={data} color={config.accent} compact />
+            {data.showQrCode && data.qrCodeLink && <div className="mt-4"><QRCodeSVG value={data.qrCodeLink} size={58} fgColor={data.theme.qrCodeColor || config.primary} /></div>}
+          </div>
+        </header>
+
+        <div className="grid grid-cols-[1fr_240px]">
+          <main className="p-8 space-y-8">
+            {data.personalInfo.summary && <section><SectionTitle color={config.accent}>Design Statement</SectionTitle><p className="leading-relaxed text-sm">{data.personalInfo.summary}</p></section>}
+            {data.experience.length > 0 && <section><SectionTitle color={config.accent} icon={Briefcase}>Experience</SectionTitle><ExperienceList data={data} color={config.primary} muted={config.muted} /></section>}
+            {data.projects.length > 0 && <section><SectionTitle color={config.accent}>Built Work</SectionTitle><ProjectGrid data={data} color={config.primary} accent={config.accent} /></section>}
+          </main>
+          <aside className="p-6 border-l-2" style={{ borderColor: config.primary }}>
+            <SideDetails data={data} color={config.primary} accent={config.accent} />
+            <div className="mt-8"><References data={data} color={config.accent} /></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConsultantResume({ data, config }: { data: ResumeData; config: typeof variantConfig.consultant }) {
+  return (
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+      <header className="p-12 text-white" style={{ backgroundColor: config.primary }}>
+        <div className="grid grid-cols-[1fr_230px] gap-8 items-start">
+          <div>
+            <div className="text-xs uppercase tracking-[0.35em] mb-4 text-white/70">Consultant Profile</div>
+            <h1 className="text-5xl font-black leading-tight mb-3">{data.personalInfo.fullName}</h1>
+            <h2 className="text-xl font-medium" style={{ color: '#bfdbfe' }}>{data.personalInfo.jobTitle}</h2>
+          </div>
+          <div className="text-white/90"><ContactRow data={data} color="#bfdbfe" compact /></div>
+        </div>
+      </header>
+
+      <div className="p-10 space-y-8">
+        {data.personalInfo.summary && (
+          <section className="grid grid-cols-[165px_1fr] gap-8">
+            <SectionTitle color={config.accent}>Summary</SectionTitle>
+            <p className="text-base leading-relaxed">{data.personalInfo.summary}</p>
+          </section>
+        )}
+        {data.experience.length > 0 && (
+          <section className="grid grid-cols-[165px_1fr] gap-8">
+            <SectionTitle color={config.accent} icon={Briefcase}>Experience</SectionTitle>
+            <ExperienceList data={data} color={config.primary} muted={config.muted} />
+          </section>
+        )}
+        {data.projects.length > 0 && (
+          <section className="grid grid-cols-[165px_1fr] gap-8">
+            <SectionTitle color={config.accent}>Case Work</SectionTitle>
+            <ProjectGrid data={data} color={config.primary} accent={config.accent} />
+          </section>
+        )}
+        <div className="grid grid-cols-[165px_1fr] gap-8">
+          <SectionTitle color={config.accent}>Credentials</SectionTitle>
+          <SideDetails data={data} color={config.primary} accent={config.accent} />
+        </div>
+        <References data={data} color={config.accent} />
+      </div>
+    </div>
+  );
+}
+
 export default function ExpressiveResume({ data, variant }: ExpressiveResumeProps) {
   const config = variantConfig[variant];
 
@@ -472,12 +584,15 @@ export default function ExpressiveResume({ data, variant }: ExpressiveResumeProp
     case 'luxe':
       return <LuxeResume data={data} config={config} />;
     case 'spectrum':
-    case 'consultant':
       return <SpectrumResume data={data} config={config} />;
     case 'timeline':
-    case 'executive':
-    case 'architect':
       return <TimelineResume data={data} config={config} />;
+    case 'executive':
+      return <ExecutiveResume data={data} config={config} />;
+    case 'architect':
+      return <ArchitectResume data={data} config={config} />;
+    case 'consultant':
+      return <ConsultantResume data={data} config={config} />;
     case 'magazine':
       return <CompactResume data={data} config={config} />;
     case 'compact':

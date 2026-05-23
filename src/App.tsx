@@ -54,6 +54,9 @@ const TEMPLATE_OPTIONS: { value: TemplateType; label: string; group: string }[] 
   { value: 'spectrum', label: 'Spectrum Color', group: 'Creative' },
   { value: 'timeline', label: 'Timeline Pro', group: 'Professional' },
   { value: 'compact', label: 'Compact Mono', group: 'Professional' },
+  { value: 'executive', label: 'Executive Brief', group: 'Professional' },
+  { value: 'consultant', label: 'Consultant Report', group: 'Professional' },
+  { value: 'architect', label: 'Architect Blueprint', group: 'Creative' },
 ];
 
 export default function App() {

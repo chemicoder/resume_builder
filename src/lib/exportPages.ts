@@ -14,6 +14,7 @@ interface BreakRegion {
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 0;
+const CONTINUATION_TOP_MARGIN_MM = 12;
 const A4_RATIO = A4_HEIGHT_MM / A4_WIDTH_MM;
 
 export const a4ExportSettings = {
@@ -113,7 +114,14 @@ function choosePageEnd(candidates: number[], regions: BreakRegion[], start: numb
   return candidate && candidate > start ? candidate : Math.min(idealEnd, imageHeight);
 }
 
-function cropImagePage(image: HTMLImageElement, sourceY: number, sourceHeight: number, outputHeight: number, backgroundColor: string) {
+function cropImagePage(
+  image: HTMLImageElement,
+  sourceY: number,
+  sourceHeight: number,
+  outputHeight: number,
+  backgroundColor: string,
+  drawOffsetY = 0,
+) {
   const canvas = document.createElement('canvas');
   canvas.width = image.width;
   canvas.height = Math.ceil(outputHeight);
@@ -132,7 +140,7 @@ function cropImagePage(image: HTMLImageElement, sourceY: number, sourceHeight: n
     image.width,
     sourceHeight,
     0,
-    0,
+    drawOffsetY,
     image.width,
     sourceHeight,
   );
@@ -182,16 +190,19 @@ export async function captureResumePages(container: HTMLElement): Promise<Resume
     const elementRect = element.getBoundingClientRect();
     const imageScale = image.width / elementRect.width;
     const sourcePageHeight = image.width * (a4ExportSettings.contentHeightMm / a4ExportSettings.contentWidthMm);
+    const continuationTopMargin = image.width * (CONTINUATION_TOP_MARGIN_MM / a4ExportSettings.contentWidthMm);
     const candidates = collectBreakCandidates(element, imageScale);
     const regions = collectBreakRegions(element, imageScale);
     const pages: ResumePageImage[] = [];
 
     let sourceY = 0;
     while (sourceY < image.height - 1) {
-      const idealEnd = Math.min(sourceY + sourcePageHeight, image.height);
+      const drawOffsetY = sourceY > 0 ? continuationTopMargin : 0;
+      const sourcePageContentHeight = sourcePageHeight - drawOffsetY;
+      const idealEnd = Math.min(sourceY + sourcePageContentHeight, image.height);
       const sourceEnd = choosePageEnd(candidates, regions, sourceY, idealEnd, image.height);
       const sourceHeight = Math.max(1, sourceEnd - sourceY);
-      pages.push(cropImagePage(image, sourceY, sourceHeight, sourcePageHeight, backgroundColor));
+      pages.push(cropImagePage(image, sourceY, sourceHeight, sourcePageHeight, backgroundColor, drawOffsetY));
       sourceY = sourceEnd;
     }
 
