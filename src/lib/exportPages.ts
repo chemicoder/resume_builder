@@ -6,6 +6,11 @@ export interface ResumePageImage {
   height: number;
 }
 
+interface BreakRegion {
+  top: number;
+  bottom: number;
+}
+
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 0;
@@ -43,8 +48,9 @@ function collectBreakCandidates(element: HTMLElement, imageScale: number) {
     'h2',
     'h3',
     'h4',
-    '[class*="grid"] > div',
-    '[class*="space-y"] > div',
+    '[class*="grid"] > *',
+    '[class*="space-y"] > *',
+    '[class*="break-inside-avoid"]',
   ].join(',');
 
   return Array.from(element.querySelectorAll<HTMLElement>(selectors))
@@ -58,13 +64,48 @@ function collectBreakCandidates(element: HTMLElement, imageScale: number) {
     .sort((a, b) => a - b);
 }
 
-function choosePageEnd(candidates: number[], start: number, idealEnd: number, imageHeight: number) {
+function collectBreakRegions(element: HTMLElement, imageScale: number): BreakRegion[] {
+  const rootRect = element.getBoundingClientRect();
+  const selectors = [
+    'section',
+    'li',
+    '[class*="grid"] > *',
+    '[class*="space-y"] > *',
+    '[class*="break-inside-avoid"]',
+  ].join(',');
+
+  return Array.from(element.querySelectorAll<HTMLElement>(selectors))
+    .map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        top: Math.max(0, Math.round((rect.top - rootRect.top) * imageScale)),
+        bottom: Math.max(0, Math.round((rect.bottom - rootRect.top) * imageScale)),
+      };
+    })
+    .filter((region, index, regions) => {
+      const height = region.bottom - region.top;
+      return height > 24 && regions.findIndex((item) => item.top === region.top && item.bottom === region.bottom) === index;
+    })
+    .sort((a, b) => a.top - b.top);
+}
+
+function choosePageEnd(candidates: number[], regions: BreakRegion[], start: number, idealEnd: number, imageHeight: number) {
   if (imageHeight - start <= idealEnd - start) {
     return imageHeight;
   }
 
   const minimumUsefulPage = start + (idealEnd - start) * 0.45;
   const maximumEnd = idealEnd - 24;
+  const crossingRegion = regions.find((region) => (
+    region.top > minimumUsefulPage
+    && region.top < idealEnd
+    && region.bottom > idealEnd
+  ));
+
+  if (crossingRegion?.top && crossingRegion.top > start) {
+    return crossingRegion.top;
+  }
+
   const candidate = candidates
     .filter((value) => value > minimumUsefulPage && value <= maximumEnd)
     .at(-1);
@@ -142,12 +183,13 @@ export async function captureResumePages(container: HTMLElement): Promise<Resume
     const imageScale = image.width / elementRect.width;
     const sourcePageHeight = image.width * (a4ExportSettings.contentHeightMm / a4ExportSettings.contentWidthMm);
     const candidates = collectBreakCandidates(element, imageScale);
+    const regions = collectBreakRegions(element, imageScale);
     const pages: ResumePageImage[] = [];
 
     let sourceY = 0;
     while (sourceY < image.height - 1) {
       const idealEnd = Math.min(sourceY + sourcePageHeight, image.height);
-      const sourceEnd = choosePageEnd(candidates, sourceY, idealEnd, image.height);
+      const sourceEnd = choosePageEnd(candidates, regions, sourceY, idealEnd, image.height);
       const sourceHeight = Math.max(1, sourceEnd - sourceY);
       pages.push(cropImagePage(image, sourceY, sourceHeight, sourcePageHeight, backgroundColor));
       sourceY = sourceEnd;

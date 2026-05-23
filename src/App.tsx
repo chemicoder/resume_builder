@@ -54,12 +54,6 @@ const TEMPLATE_OPTIONS: { value: TemplateType; label: string; group: string }[] 
   { value: 'spectrum', label: 'Spectrum Color', group: 'Creative' },
   { value: 'timeline', label: 'Timeline Pro', group: 'Professional' },
   { value: 'compact', label: 'Compact Mono', group: 'Professional' },
-  { value: 'executive', label: 'Executive Slate', group: 'Professional' },
-  { value: 'consultant', label: 'Consultant Blue', group: 'Professional' },
-  { value: 'architect', label: 'Architect Lines', group: 'Creative' },
-  { value: 'atelier', label: 'Atelier Serif', group: 'Creative' },
-  { value: 'magazine', label: 'Magazine Mono', group: 'Creative' },
-  { value: 'neoclassic', label: 'Neo Classic', group: 'Formal' },
 ];
 
 export default function App() {
