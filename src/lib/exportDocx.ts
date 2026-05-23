@@ -1599,6 +1599,267 @@ function buildDeveloper(ctx: BuildContext): DocxNode[] {
 }
 
 /* =====================================================================
+ * EXPRESSIVE TEMPLATE FAMILY
+ * Word-native editable versions for the creative/professional variants.
+ * These intentionally avoid decorative template labels and keep the
+ * candidate name/job title as the first visible signal.
+ * ===================================================================== */
+function expressiveHeading(label: string, color: string, font: string): Paragraph {
+  return paragraph(
+    [run(label, { bold: true, color, size: 20, font, allCaps: true })],
+    { after: 100, before: 80, border: { bottom: { color, size: 6 } }, keepNext: true },
+  );
+}
+
+function expressiveExperience(data: ResumeData, primary: string, accent: string, font: string, bodyColor = '1F2937'): DocxNode[] {
+  const nodes: DocxNode[] = [];
+  data.experience.forEach((exp, idx) => {
+    nodes.push(fullTable([
+      new TableRow({
+        children: [
+          tableCell([paragraph([run(exp.role, { bold: true, color: primary, size: 22, font })], { after: 30 })], { width: 68, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          tableCell([paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 17, font })], { align: 'RIGHT', after: 30 })], { width: 32, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+        ],
+      }),
+    ]));
+    nodes.push(paragraph([run(exp.company, { bold: true, color: accent, size: 19, font })], { after: 70 }));
+    bulletList(splitLines(exp.description), { color: bodyColor, size: 18, font }).forEach((item) => nodes.push(item));
+    if (idx < data.experience.length - 1) nodes.push(spacer(140));
+  });
+  return nodes;
+}
+
+function expressiveProjects(data: ResumeData, primary: string, accent: string, font: string): DocxNode[] {
+  if (!data.projects.length) return [];
+  const cells = data.projects.map((project) => {
+    const children: DocxNode[] = [
+      paragraph([run(project.name, { bold: true, color: primary, size: 20, font })], { after: 70 }),
+      paragraph([run(project.description, { color: '374151', size: 17, font })], { after: 80 }),
+    ];
+    if (project.technologies?.length) {
+      children.push(paragraph([run(project.technologies.join(' | '), { color: accent, size: 15, font, allCaps: true })], { after: 0 }));
+    }
+    return tableCell(children, { width: 50, fill: 'FFFFFF', margins: { top: 220, bottom: 220, left: 240, right: 240 }, borders: { top: 'E5E7EB', bottom: 'E5E7EB', left: 'E5E7EB', right: 'E5E7EB' } });
+  });
+
+  const rows: TableRow[] = [];
+  for (let index = 0; index < cells.length; index += 2) {
+    rows.push(new TableRow({
+      children: [
+        cells[index],
+        cells[index + 1] ?? tableCell([], { width: 50, fill: 'FFFFFF' }),
+      ],
+    }));
+  }
+
+  return [fullTable(rows)];
+}
+
+function expressiveSideDetails(data: ResumeData, primary: string, accent: string, font: string): DocxNode[] {
+  const nodes: DocxNode[] = [];
+  if (data.skills.length) {
+    nodes.push(expressiveHeading('Skills', accent, font));
+    const grid = pillGrid(data.skills, {
+      textColor: primary,
+      fillColor: 'FFFFFF',
+      borderColor: 'CBD5E1',
+      font,
+      size: 16,
+      columns: 2,
+    });
+    if (grid) nodes.push(grid);
+    nodes.push(spacer(140));
+  }
+
+  if (data.education.length) {
+    nodes.push(expressiveHeading('Education', accent, font));
+    data.education.forEach((edu, idx) => {
+      nodes.push(paragraph([run(edu.degree, { bold: true, color: primary, size: 19, font })], { after: 30 }));
+      nodes.push(paragraph([run(edu.institution, { color: '4B5563', size: 17, font })], { after: 30 }));
+      nodes.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: '6B7280', size: 15, font })], { after: idx < data.education.length - 1 ? 120 : 60 }));
+    });
+    nodes.push(spacer(120));
+  }
+
+  if ((data.languages || []).length) {
+    nodes.push(expressiveHeading('Languages', accent, font));
+    languageList(data, { color: primary, size: 18, font }).forEach((item) => nodes.push(item));
+  }
+
+  return nodes;
+}
+
+function buildExpressiveClassic(ctx: BuildContext): DocxNode[] {
+  const { data, palette } = ctx;
+  const { primary, accent, font } = palette;
+  const nodes: DocxNode[] = [
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 44, font, allCaps: true })], { after: 60 }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 24, font, italics: true })], { after: 110 }),
+    paragraph([run(contactItems(data).join('   |   '), { color: '4B5563', size: 17, font })], { after: 160 }),
+  ];
+
+  if (data.personalInfo.summary) {
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 21, font })], { after: 220, border: { left: { color: accent, size: 12 } }, indent: { left: 180 } }));
+  }
+  if (data.experience.length) {
+    nodes.push(expressiveHeading('Experience', primary, font));
+    expressiveExperience(data, primary, accent, font).forEach((item) => nodes.push(item));
+  }
+  if (data.projects.length) {
+    nodes.push(expressiveHeading('Selected Work', primary, font));
+    expressiveProjects(data, primary, accent, font).forEach((item) => nodes.push(item));
+  }
+
+  const details = expressiveSideDetails(data, primary, accent, font);
+  if (details.length) {
+    nodes.push(expressiveHeading('Credentials', primary, font));
+    details.forEach((item) => nodes.push(item));
+  }
+  if (data.references !== undefined) {
+    nodes.push(expressiveHeading('References', primary, font));
+    referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => nodes.push(item));
+  }
+
+  return nodes;
+}
+
+function buildExpressiveSidebar(ctx: BuildContext): DocxNode[] {
+  const { data, palette } = ctx;
+  const { primary, accent, font } = palette;
+  const side: DocxNode[] = [
+    paragraph([run(contactItems(data).join('\n'), { color: '4B5563', size: 16, font })], { after: 180 }),
+    ...expressiveSideDetails(data, primary, accent, font),
+  ];
+  const main: DocxNode[] = [
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 42, font })], { after: 60 }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 23, font })], { after: 140 }),
+  ];
+  if (data.personalInfo.summary) {
+    main.push(expressiveHeading('Profile', accent, font));
+    main.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 19, font })], { after: 180 }));
+  }
+  if (data.experience.length) {
+    main.push(expressiveHeading('Experience', primary, font));
+    expressiveExperience(data, primary, accent, font).forEach((item) => main.push(item));
+  }
+  if (data.projects.length) {
+    main.push(expressiveHeading('Projects', primary, font));
+    expressiveProjects(data, primary, accent, font).forEach((item) => main.push(item));
+  }
+  if (data.references !== undefined) {
+    main.push(expressiveHeading('References', primary, font));
+    referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => main.push(item));
+  }
+
+  return [
+    fullTable([
+      new TableRow({
+        children: [
+          tableCell(side, { width: 32, fill: 'F8FAFC', margins: { top: 420, bottom: 420, left: 360, right: 300 }, borders: { right: 'CBD5E1' } }),
+          tableCell(main, { width: 68, margins: { top: 420, bottom: 420, left: 420, right: 0 } }),
+        ],
+      }),
+    ]),
+  ];
+}
+
+function buildExpressiveBanner(ctx: BuildContext): DocxNode[] {
+  const { data, palette } = ctx;
+  const { primary, accent, font } = palette;
+  const body: DocxNode[] = [];
+  if (data.personalInfo.summary) {
+    body.push(expressiveHeading('Summary', accent, font));
+    body.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 19, font })], { after: 180 }));
+  }
+  if (data.experience.length) {
+    body.push(expressiveHeading('Experience', accent, font));
+    expressiveExperience(data, primary, accent, font).forEach((item) => body.push(item));
+  }
+  if (data.projects.length) {
+    body.push(expressiveHeading('Case Work', accent, font));
+    expressiveProjects(data, primary, accent, font).forEach((item) => body.push(item));
+  }
+  const details = expressiveSideDetails(data, primary, accent, font);
+  if (details.length) {
+    body.push(expressiveHeading('Credentials', accent, font));
+    details.forEach((item) => body.push(item));
+  }
+  if (data.references !== undefined) {
+    body.push(expressiveHeading('References', accent, font));
+    referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => body.push(item));
+  }
+
+  return [
+    fullTable([
+      new TableRow({
+        children: [
+          tableCell([
+            paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'FFFFFF', size: 42, font })], { after: 70 }),
+            paragraph([run(data.personalInfo.jobTitle || '', { color: 'DBEAFE', size: 23, font })], { after: 120 }),
+            paragraph([run(contactItems(data).join('   |   '), { color: 'E0F2FE', size: 16, font })], { after: 0 }),
+          ], { width: 100, fill: primary, margins: { top: 520, bottom: 520, left: 520, right: 520 } }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          tableCell(body, { width: 100, margins: { top: 420, bottom: 420, left: 520, right: 520 } }),
+        ],
+      }),
+    ]),
+  ];
+}
+
+function buildExpressiveCompact(ctx: BuildContext): DocxNode[] {
+  const { data, palette } = ctx;
+  const { primary, accent, font } = palette;
+  const nodes: DocxNode[] = [
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 36, font, allCaps: true })], { after: 40, border: { top: { color: primary, size: 10 } } }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 20, font })], { after: 70 }),
+    paragraph([run(contactItems(data).join(' | '), { color: '4B5563', size: 15, font })], { after: 140, border: { bottom: { color: primary, size: 6 } } }),
+  ];
+  if (data.personalInfo.summary) {
+    nodes.push(expressiveHeading('Profile', accent, font));
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 17, font })], { after: 150 }));
+  }
+  if (data.experience.length) {
+    nodes.push(expressiveHeading('Experience', accent, font));
+    expressiveExperience(data, primary, accent, font, '1F2937').forEach((item) => nodes.push(item));
+  }
+  if (data.projects.length) {
+    nodes.push(expressiveHeading('Projects', accent, font));
+    expressiveProjects(data, primary, accent, font).forEach((item) => nodes.push(item));
+  }
+  const details = expressiveSideDetails(data, primary, accent, font);
+  details.forEach((item) => nodes.push(item));
+  if (data.references !== undefined) {
+    nodes.push(expressiveHeading('References', accent, font));
+    referenceList(data, { primary, accent, font, size: 17 }).forEach((item) => nodes.push(item));
+  }
+  return nodes;
+}
+
+function buildExpressive(ctx: BuildContext): DocxNode[] {
+  switch (ctx.template) {
+    case 'consultant':
+    case 'spectrum':
+    case 'luxe':
+      return buildExpressiveBanner(ctx);
+    case 'executive':
+    case 'architect':
+    case 'timeline':
+      return buildExpressiveSidebar(ctx);
+    case 'compact':
+    case 'magazine':
+      return buildExpressiveCompact(ctx);
+    case 'editorial':
+    case 'atelier':
+    case 'neoclassic':
+    default:
+      return buildExpressiveClassic(ctx);
+  }
+}
+
+/* =====================================================================
  * Dispatch + Page Setup
  * ===================================================================== */
 function buildDocument(ctx: BuildContext): DocxNode[] {
@@ -1610,17 +1871,18 @@ function buildDocument(ctx: BuildContext): DocxNode[] {
     case 'engineersaustralia': return buildEngineersAustralia(ctx);
     case 'creative': return buildCreative(ctx);
     case 'developer': return buildDeveloper(ctx);
-    case 'editorial': return buildHarvard(ctx);
-    case 'luxe': return buildCreative(ctx);
-    case 'spectrum': return buildPortfolio(ctx);
-    case 'timeline': return buildModern(ctx);
-    case 'compact': return buildMinimal(ctx);
-    case 'executive': return buildModern(ctx);
-    case 'atelier': return buildHarvard(ctx);
-    case 'architect': return buildModern(ctx);
-    case 'consultant': return buildPortfolio(ctx);
-    case 'magazine': return buildMinimal(ctx);
-    case 'neoclassic': return buildHarvard(ctx);
+    case 'editorial':
+    case 'luxe':
+    case 'spectrum':
+    case 'timeline':
+    case 'compact':
+    case 'executive':
+    case 'atelier':
+    case 'architect':
+    case 'consultant':
+    case 'magazine':
+    case 'neoclassic':
+      return buildExpressive(ctx);
     case 'minimal':
     default: return buildMinimal(ctx);
   }

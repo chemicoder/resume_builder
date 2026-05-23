@@ -283,7 +283,6 @@ function EditorialResume({ data, config }: { data: ResumeData; config: typeof va
     <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-12 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
       <header className="grid grid-cols-[1fr_180px] gap-8 border-b pb-8 mb-8" style={{ borderColor: `${config.primary}55` }}>
         <div>
-          <div className="text-xs uppercase tracking-[0.35em] mb-4" style={{ color: config.accent }}>{config.name} Resume</div>
           <h1 className="text-6xl leading-none font-black mb-4">{data.personalInfo.fullName}</h1>
           <h2 className="text-2xl italic" style={{ color: config.primary }}>{data.personalInfo.jobTitle}</h2>
         </div>
@@ -321,7 +320,6 @@ function LuxeResume({ data, config }: { data: ResumeData; config: typeof variant
       <div className="p-10 border-[14px] min-h-[1131px]" style={{ borderColor: config.primary }}>
         <header className="flex justify-between gap-8 mb-10">
           <div>
-            <div className="text-xs uppercase tracking-[0.45em] mb-4" style={{ color: config.primary }}>Signature Profile</div>
             <h1 className="text-5xl font-black uppercase leading-tight mb-3">{data.personalInfo.fullName}</h1>
             <h2 className="text-xl" style={{ color: config.accent }}>{data.personalInfo.jobTitle}</h2>
           </div>
@@ -354,7 +352,7 @@ function SpectrumResume({ data, config }: { data: ResumeData; config: typeof var
     <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] overflow-hidden ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
       <header className="grid grid-cols-[290px_1fr] min-h-[280px]">
         <div className="p-10 text-white flex flex-col justify-between" style={{ background: `linear-gradient(135deg, ${config.primary}, ${config.accent})` }}>
-          <div className="text-xs uppercase tracking-[0.35em]">Spectrum</div>
+          <div />
           {data.showQrCode && data.qrCodeLink && <div className="bg-white p-2 w-fit"><QRCodeSVG value={data.qrCodeLink} size={68} fgColor={data.theme.qrCodeColor || config.primary} /></div>}
         </div>
         <div className="p-10">
@@ -437,7 +435,6 @@ function CompactResume({ data, config }: { data: ResumeData; config: typeof vari
       <header className="border-2 p-5 mb-6" style={{ borderColor: config.primary }}>
         <div className="flex justify-between gap-6">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] mb-2" style={{ color: config.accent }}>Compact / ATS Visual</div>
             <h1 className="text-4xl font-black uppercase leading-tight">{data.personalInfo.fullName}</h1>
             <h2 className="text-lg mt-1" style={{ color: config.accent }}>{data.personalInfo.jobTitle}</h2>
           </div>
@@ -467,7 +464,6 @@ function ExecutiveResume({ data, config }: { data: ResumeData; config: typeof va
       <header className="px-12 pt-12 pb-8 border-b-[6px]" style={{ borderColor: config.accent }}>
         <div className="flex justify-between gap-8">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] mb-3" style={{ color: config.accent }}>Executive Brief</div>
             <h1 className="text-5xl font-black leading-tight mb-2">{data.personalInfo.fullName}</h1>
             <h2 className="text-xl font-semibold" style={{ color: config.primary }}>{data.personalInfo.jobTitle}</h2>
           </div>
@@ -504,7 +500,6 @@ function ArchitectResume({ data, config }: { data: ResumeData; config: typeof va
       <div className="border-2 min-h-[1051px]" style={{ borderColor: config.primary }}>
         <header className="grid grid-cols-[1fr_230px] border-b-2" style={{ borderColor: config.primary }}>
           <div className="p-8">
-            <div className="text-xs uppercase tracking-[0.42em] mb-4" style={{ color: config.accent }}>Blueprint</div>
             <h1 className="text-5xl font-black uppercase leading-none mb-4">{data.personalInfo.fullName}</h1>
             <h2 className="text-lg font-semibold" style={{ color: config.primary }}>{data.personalInfo.jobTitle}</h2>
           </div>
@@ -536,7 +531,6 @@ function ConsultantResume({ data, config }: { data: ResumeData; config: typeof v
       <header className="p-12 text-white" style={{ backgroundColor: config.primary }}>
         <div className="grid grid-cols-[1fr_230px] gap-8 items-start">
           <div>
-            <div className="text-xs uppercase tracking-[0.35em] mb-4 text-white/70">Consultant Profile</div>
             <h1 className="text-5xl font-black leading-tight mb-3">{data.personalInfo.fullName}</h1>
             <h2 className="text-xl font-medium" style={{ color: '#bfdbfe' }}>{data.personalInfo.jobTitle}</h2>
           </div>
