@@ -140,7 +140,7 @@ export default function DeveloperPortfolio({ data }: { data: ResumeData }) {
 
         {/* Education */}
         {data.education.length > 0 && (
-          <div>
+          <div className="mb-10">
             <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-100">
               <span style={{ color: primaryColor }}>$</span> cat education.json
             </h3>
@@ -153,6 +153,46 @@ export default function DeveloperPortfolio({ data }: { data: ResumeData }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Languages */}
+        {(data.languages || []).length > 0 && (
+          <div className="mb-10">
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-100">
+              <span style={{ color: primaryColor }}>$</span> locale -a
+            </h3>
+            <div className="space-y-2 pl-4">
+              {(data.languages || []).map((lang) => (
+                <div key={lang.id} className="flex items-center gap-3 text-sm">
+                  <span className="text-slate-500">&gt;</span>
+                  <span className="text-slate-300 font-medium">{lang.name}</span>
+                  <span className="text-slate-600">/* {lang.level} */</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* References */}
+        {data.references !== undefined && (
+          <div>
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-100">
+              <span style={{ color: primaryColor }}>$</span> cat references.txt
+            </h3>
+            {(data.references || []).length === 0 ? (
+              <p className="text-sm text-slate-400 pl-4 italic">// References available on request</p>
+            ) : (
+              <div className="space-y-3 pl-4">
+                {(data.references || []).map((ref) => (
+                  <div key={ref.id} className="bg-slate-800/30 border border-slate-700 p-4 rounded-lg text-sm">
+                    <div className="text-slate-200 font-bold">{ref.name}</div>
+                    {(ref.role || ref.organization) && <div className="text-slate-500">{[ref.role, ref.organization].filter(Boolean).join(', ')}</div>}
+                    {(ref.email || ref.phone) && <div className="text-xs text-slate-600 mt-1">{[ref.email, ref.phone].filter(Boolean).join(' | ')}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

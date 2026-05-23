@@ -19,18 +19,13 @@ export async function exportResumePdf(container: HTMLElement, fullName: string) 
     pdf.setFillColor(255, 255, 255);
     pdf.rect(0, 0, a4ExportSettings.pageWidthMm, a4ExportSettings.pageHeightMm, 'F');
 
-    const imageHeightMm = Math.min(
-      a4ExportSettings.contentHeightMm,
-      (page.height * a4ExportSettings.contentWidthMm) / page.width,
-    );
-
     pdf.addImage(
       page.dataUrl,
       'PNG',
       a4ExportSettings.marginMm,
       a4ExportSettings.marginMm,
       a4ExportSettings.contentWidthMm,
-      imageHeightMm,
+      a4ExportSettings.contentHeightMm,
       undefined,
       'FAST',
     );

@@ -57,6 +57,12 @@ export const initialData: ResumeData = {
       technologies: ["Vue.js", "Firebase", "Tailwind CSS"]
     }
   ],
+  languages: [
+    { id: '1', name: 'English', level: 'Native' },
+    { id: '2', name: 'Spanish', level: 'B2' },
+  ],
+  // references is intentionally omitted — section hidden by default;
+  // user opts in via the sidebar checkbox.
   theme: {
     primary: '#2563eb',
     accent: '#3b82f6',

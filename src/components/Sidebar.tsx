@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { ResumeData } from '../types';
-import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy } from 'lucide-react';
+import { Language, LanguageLevel, LanguageSkills, ResumeData } from '../types';
+import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy, Languages as LanguagesIcon, UserCheck } from 'lucide-react';
 import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI, tailorResumeAI } from '../lib/gemini';
+import { createSharedResume, trackEvent } from '../lib/analytics';
 import { QRCodeSVG } from 'qrcode.react';
 import LZString from 'lz-string';
 
@@ -40,6 +41,8 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [documentUrl, setDocumentUrl] = useState('');
   const [showQR, setShowQR] = useState(false);
   const [isTailoring, setIsTailoring] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [isCreatingShare, setIsCreatingShare] = useState(false);
 
   const handleTailorResume = async () => {
     if (!data.targetJob?.description) {
@@ -54,6 +57,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
         atsScore,
         targetJob: data.targetJob
       });
+      trackEvent('ai_tailor', { template, metadata: { atsScore } });
     } catch (error) {
       console.error(error);
       alert(getErrorMessage(error, "Failed to tailor resume. Please try again."));
@@ -62,7 +66,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     }
   };
 
-  const shareUrl = useMemo(() => {
+  const fallbackShareUrl = useMemo(() => {
     const dataToShare = { ...data };
     if (dataToShare.personalInfo) {
       dataToShare.personalInfo = { ...dataToShare.personalInfo };
@@ -73,6 +77,25 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
     return `${window.location.origin}${window.location.pathname}#${compressed}`;
   }, [data, template]);
+
+  const activeShareUrl = shareUrl || fallbackShareUrl;
+
+  const handleCreateShare = async () => {
+    setIsCreatingShare(true);
+    try {
+      const shared = await createSharedResume(data, template);
+      setShareUrl(shared.url);
+      setShowQR(true);
+      trackEvent('share_created', { template, metadata: { slug: shared.slug, mode: shared.mode || 'server' } });
+    } catch (error) {
+      console.error('Failed to create server share link', error);
+      setShareUrl('');
+      setShowQR(true);
+      trackEvent('share_created', { template, metadata: { mode: 'legacy_hash_fallback' } });
+    } finally {
+      setIsCreatingShare(false);
+    }
+  };
 
   const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     onChange({
@@ -155,6 +178,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       const processedFiles = await Promise.all(filePromises);
       const parsedData = await parseDocumentAI(data, processedFiles);
       onChange(parsedData);
+      trackEvent('ai_import', { template, metadata: { source: 'upload', fileCount: files.length } });
     } catch (error) {
       console.error("Failed to parse documents", error);
       alert(getErrorMessage(error, "Failed to parse documents. Please try again."));
@@ -169,6 +193,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     try {
       const parsedData = await parseDocumentAI(data, undefined, documentUrl);
       onChange(parsedData);
+      trackEvent('ai_import', { template, metadata: { source: 'url' } });
       setDocumentUrl('');
     } catch (error) {
       console.error("Failed to parse URL", error);
@@ -194,6 +219,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
           ...data,
           personalInfo: { ...data.personalInfo, summary }
         });
+        trackEvent('ai_summary', { template });
       }
     } catch (error) {
       console.error(error);
@@ -209,6 +235,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       const desc = await generateProjectDescriptionAI(proj.name, proj.technologies);
       if (desc) {
         handleArrayChange('projects', index, 'description', desc);
+        trackEvent('ai_project', { template });
       }
     } catch (error) {
       console.error(error);
@@ -228,27 +255,28 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
         </div>
         {!showQR ? (
           <button
-            onClick={() => setShowQR(true)}
+            onClick={handleCreateShare}
+            disabled={isCreatingShare}
             className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white py-2 rounded hover:bg-purple-700 transition-colors text-sm font-medium mb-2"
           >
-            <Share2 size={14} />
-            Generate Share Link & QR Code
+            {isCreatingShare ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+            {isCreatingShare ? 'Creating Share Link...' : 'Generate Share Link & QR Code'}
           </button>
         ) : (
           <>
-            {shareUrl.length <= 2900 ? (
-              <div className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm mb-3 w-full flex justify-center">
-                <QRCodeSVG value={shareUrl} size={200} level="L" />
+            {activeShareUrl.length <= 2900 ? (
+              <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm mb-3 inline-flex flex-col items-center self-center">
+                <QRCodeSVG value={activeShareUrl} size={140} level="M" marginSize={2} />
               </div>
             ) : (
-              <div className="bg-white p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-sm shadow-sm mb-3 w-full text-center">
-                Resume data is too large for a QR code. Please use the copy link button below.
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-amber-700 text-xs shadow-sm mb-3 w-full text-center">
+                Resume data is too large for a QR code. Use the copy link button below.
               </div>
             )}
-            <p className="text-xs text-purple-600 mb-3 text-center">Scan to open this exact resume on any device.</p>
+            <p className="text-xs text-purple-600 mb-3 text-center">Recipients open this link in preview mode with a one-click "Download PDF" button — no edits required.</p>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(shareUrl);
+                navigator.clipboard.writeText(activeShareUrl);
                 alert('Link copied to clipboard!');
               }}
               className="w-full flex items-center justify-center gap-2 bg-white border border-purple-200 text-purple-700 py-2 rounded hover:bg-purple-100 transition-colors text-sm font-medium"
@@ -258,56 +286,6 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
             </button>
           </>
         )}
-      </section>
-
-      {/* ATS Optimization Section */}
-      <section className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
-        <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
-          <Sparkles size={18} />
-          <h3>ATS Optimization</h3>
-        </div>
-        <p className="text-xs text-emerald-600 mb-3">Tailor your resume to a specific job description to improve your ATS match score.</p>
-        
-        {data.atsScore !== undefined && (
-          <div className="mb-4 bg-white p-3 rounded border border-emerald-200 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Current ATS Score:</span>
-            <span className={`text-lg font-bold ${data.atsScore >= 80 ? 'text-emerald-600' : data.atsScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
-              {data.atsScore}/100
-            </span>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Job URL (Optional)</label>
-            <input 
-              type="url" 
-              value={data.targetJob?.url || ''}
-              onChange={(e) => onChange({ ...data, targetJob: { ...data.targetJob, description: data.targetJob?.description || '', url: e.target.value } })}
-              placeholder="https://company.com/jobs/123" 
-              className="w-full p-2 text-sm border border-emerald-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none"
-              disabled={isTailoring}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Job Description</label>
-            <textarea 
-              value={data.targetJob?.description || ''}
-              onChange={(e) => onChange({ ...data, targetJob: { ...data.targetJob, url: data.targetJob?.url, description: e.target.value } })}
-              placeholder="Paste the full job description here..." 
-              className="w-full p-2 text-sm border border-emerald-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none min-h-[100px] resize-y"
-              disabled={isTailoring}
-            />
-          </div>
-          <button 
-            onClick={handleTailorResume}
-            disabled={isTailoring || !data.targetJob?.description}
-            className="w-full bg-emerald-600 text-white px-3 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            {isTailoring ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            <span className="text-sm font-medium">{isTailoring ? 'Tailoring Resume...' : 'Tailor Resume & Get Score'}</span>
-          </button>
-        </div>
       </section>
 
       {/* Import Section */}
@@ -597,6 +575,242 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
         </div>
       </section>
 
+      {/* Languages */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+            <LanguagesIcon size={20} />
+            <h2>Languages</h2>
+          </div>
+          <button onClick={() => addArrayItem('languages', { name: '', level: 'B2' })} className="text-blue-600 hover:text-blue-800 p-1">
+            <Plus size={20} />
+          </button>
+        </div>
+        <div className="space-y-3">
+          {(data.languages || []).map((lang, index) => (
+            <LanguageRow
+              key={lang.id}
+              lang={lang}
+              onNameChange={(name) => handleArrayChange('languages', index, 'name', name)}
+              onLevelChange={(level) => handleArrayChange('languages', index, 'level', level)}
+              onSkillsChange={(skills: LanguageSkills | undefined) => {
+                const next = [...(data.languages || [])];
+                if (skills) {
+                  next[index] = { ...next[index], skills };
+                } else {
+                  const { skills: _omit, ...rest } = next[index];
+                  next[index] = rest;
+                }
+                onChange({ ...data, languages: next });
+              }}
+              onRemove={() => removeArrayItem('languages', index)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* References (optional)
+          Visibility convention:
+            - data.references === undefined → section hidden from resume entirely
+            - data.references === []        → section shows "Available on request"
+            - data.references === [refs]    → section shows the references */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+            <UserCheck size={20} />
+            <h2>References <span className="text-xs font-normal text-gray-400">(optional)</span></h2>
+          </div>
+          <button
+            onClick={() => addArrayItem('references', { name: '', role: '', organization: '', email: '', phone: '' })}
+            disabled={data.references === undefined}
+            className="text-blue-600 hover:text-blue-800 p-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Add reference"
+            title={data.references === undefined ? 'Enable the section first' : 'Add reference'}
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+        <label className="flex items-start gap-2 mb-3 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={data.references !== undefined}
+            onChange={(e) => onChange({ ...data, references: e.target.checked ? (data.references || []) : undefined })}
+            className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+          />
+          <span>
+            Show References section in the resume
+            <span className="block text-xs text-gray-500 mt-0.5">
+              Uncheck to omit this section entirely. When checked but empty, the resume shows "Available on request".
+            </span>
+          </span>
+        </label>
+        {data.references !== undefined && (
+          <div className="space-y-6">
+            {data.references.map((ref, index) => (
+              <div key={ref.id} className="p-4 border border-gray-200 rounded-lg relative group bg-gray-50">
+                <button onClick={() => removeArrayItem('references', index)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Trash2 size={16} />
+                </button>
+                <div className="space-y-3">
+                  <input type="text" value={ref.name} onChange={(e) => handleArrayChange('references', index, 'name', e.target.value)} placeholder="Full name" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" value={ref.role} onChange={(e) => handleArrayChange('references', index, 'role', e.target.value)} placeholder="Role / title" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+                    <input type="text" value={ref.organization} onChange={(e) => handleArrayChange('references', index, 'organization', e.target.value)} placeholder="Organization" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="email" value={ref.email} onChange={(e) => handleArrayChange('references', index, 'email', e.target.value)} placeholder="Email" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+                    <input type="text" value={ref.phone} onChange={(e) => handleArrayChange('references', index, 'phone', e.target.value)} placeholder="Phone" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ATS Optimization Section */}
+      <section className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
+        <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
+          <Sparkles size={18} />
+          <h3>ATS Optimization</h3>
+        </div>
+        <p className="text-xs text-emerald-600 mb-3">Tailor your resume to a specific job description to improve your ATS match score.</p>
+
+        {data.atsScore !== undefined && (
+          <div className="mb-4 bg-white p-3 rounded border border-emerald-200 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Current ATS Score:</span>
+            <span className={`text-lg font-bold ${data.atsScore >= 80 ? 'text-emerald-600' : data.atsScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+              {data.atsScore}/100
+            </span>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Job URL (Optional)</label>
+            <input
+              type="url"
+              value={data.targetJob?.url || ''}
+              onChange={(e) => onChange({ ...data, targetJob: { ...data.targetJob, description: data.targetJob?.description || '', url: e.target.value } })}
+              placeholder="https://company.com/jobs/123"
+              className="w-full p-2 text-sm border border-emerald-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none"
+              disabled={isTailoring}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Job Description</label>
+            <textarea
+              value={data.targetJob?.description || ''}
+              onChange={(e) => onChange({ ...data, targetJob: { ...data.targetJob, url: data.targetJob?.url, description: e.target.value } })}
+              placeholder="Paste the full job description here..."
+              className="w-full p-2 text-sm border border-emerald-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none min-h-[100px] resize-y"
+              disabled={isTailoring}
+            />
+          </div>
+          <button
+            onClick={handleTailorResume}
+            disabled={isTailoring || !data.targetJob?.description}
+            className="w-full bg-emerald-600 text-white px-3 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {isTailoring ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            <span className="text-sm font-medium">{isTailoring ? 'Tailoring Resume...' : 'Tailor Resume & Get Score'}</span>
+          </button>
+        </div>
+      </section>
+
     </div>
   );
 }
+
+const LEVEL_OPTIONS: { value: LanguageLevel; label: string }[] = [
+  { value: 'A1', label: 'A1 (Beginner)' },
+  { value: 'A2', label: 'A2 (Elementary)' },
+  { value: 'B1', label: 'B1 (Intermediate)' },
+  { value: 'B2', label: 'B2 (Upper Intermediate)' },
+  { value: 'C1', label: 'C1 (Advanced)' },
+  { value: 'C2', label: 'C2 (Proficient)' },
+  { value: 'Native', label: 'Native' },
+];
+
+const SKILL_FIELDS: { key: keyof LanguageSkills; label: string; group: string }[] = [
+  { key: 'listening', label: 'Listening', group: 'Understanding' },
+  { key: 'reading', label: 'Reading', group: 'Understanding' },
+  { key: 'spokenInteraction', label: 'Interaction', group: 'Speaking' },
+  { key: 'spokenProduction', label: 'Production', group: 'Speaking' },
+  { key: 'writing', label: 'Writing', group: 'Writing' },
+];
+
+interface LanguageRowProps {
+  lang: Language;
+  onNameChange: (name: string) => void;
+  onLevelChange: (level: string) => void;
+  onSkillsChange: (skills: LanguageSkills | undefined) => void;
+  onRemove: () => void;
+}
+
+const LanguageRow: React.FC<LanguageRowProps> = ({ lang, onNameChange, onLevelChange, onSkillsChange, onRemove }) => {
+  const [expanded, setExpanded] = useState(Boolean(lang.skills));
+  const skills = lang.skills || {};
+
+  const setSkill = (key: keyof LanguageSkills, value: string) => {
+    const nextValue = value ? (value as LanguageLevel) : undefined;
+    const next: LanguageSkills = { ...skills, [key]: nextValue };
+    // If every sub-skill is unset, drop the object entirely so templates
+    // know to fall back to the overall level.
+    const isEmpty = SKILL_FIELDS.every(({ key: k }) => !next[k]);
+    onSkillsChange(isEmpty ? undefined : next);
+  };
+
+  return (
+    <div className="p-3 border border-gray-200 rounded-lg bg-gray-50 group">
+      <div className="flex gap-2 items-center">
+        <input
+          type="text"
+          value={lang.name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="Language (e.g. English)"
+          className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+        />
+        <select
+          value={lang.level}
+          onChange={(e) => onLevelChange(e.target.value)}
+          className="p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+        >
+          {LEVEL_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+        </select>
+        <button onClick={onRemove} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" aria-label="Remove language">
+          <Trash2 size={16} />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="text-xs text-blue-600 hover:text-blue-800 mt-2"
+      >
+        {expanded ? 'Hide per-skill levels' : 'Set per-skill levels (CEFR)'}
+      </button>
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <p className="text-xs text-gray-500 mb-2">Override individual CEFR sub-skill levels (used by Europass). Leave a row blank to fall back to the overall level above.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {SKILL_FIELDS.map(({ key, label, group }) => (
+              <div key={key} className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase tracking-wide text-gray-500">
+                  <span className="text-gray-400">{group}:</span> {label}
+                </label>
+                <select
+                  value={skills[key] || ''}
+                  onChange={(e) => setSkill(key, e.target.value)}
+                  className="p-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white text-xs"
+                >
+                  <option value="">— same as overall ({lang.level}) —</option>
+                  {LEVEL_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.value}</option>))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

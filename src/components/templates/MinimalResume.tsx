@@ -123,9 +123,42 @@ export default function MinimalResume({ data }: { data: ResumeData }) {
 
       {/* Skills */}
       {data.skills.length > 0 && (
-        <section>
+        <section className="mb-8">
           <h3 className="text-lg font-bold uppercase tracking-wider border-b pb-1 mb-3" style={{ borderColor: primaryColor, color: primaryColor }}>Skills</h3>
           <p className="text-sm leading-relaxed">{data.skills.join(' • ')}</p>
+        </section>
+      )}
+
+      {/* Languages */}
+      {(data.languages || []).length > 0 && (
+        <section className="mb-8">
+          <h3 className="text-lg font-bold uppercase tracking-wider border-b pb-1 mb-3" style={{ borderColor: primaryColor, color: primaryColor }}>Languages</h3>
+          <ul className="text-sm leading-relaxed grid grid-cols-2 gap-x-6 gap-y-1">
+            {(data.languages || []).map((lang) => (
+              <li key={lang.id}><span className="font-medium">{lang.name}</span> <span className="text-gray-500">— {lang.level}</span></li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* References */}
+      {(data.references !== undefined) && (
+        <section>
+          <h3 className="text-lg font-bold uppercase tracking-wider border-b pb-1 mb-3" style={{ borderColor: primaryColor, color: primaryColor }}>References</h3>
+          {(data.references || []).length === 0 ? (
+            <p className="text-sm italic text-gray-600">References available on request.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              {(data.references || []).map((ref) => (
+                <div key={ref.id} className="text-sm">
+                  <div className="font-bold">{ref.name}</div>
+                  {(ref.role || ref.organization) && <div className="text-gray-700">{[ref.role, ref.organization].filter(Boolean).join(', ')}</div>}
+                  {ref.email && <div className="text-gray-600">{ref.email}</div>}
+                  {ref.phone && <div className="text-gray-600">{ref.phone}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </div>

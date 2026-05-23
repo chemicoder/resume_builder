@@ -63,7 +63,7 @@ export default function ModernResume({ data }: { data: ResumeData }) {
         )}
 
         {data.education.length > 0 && (
-          <div>
+          <div className="mb-8">
             <h3 className="text-lg font-semibold uppercase tracking-wider mb-4 border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>Education</h3>
             <div className="space-y-4">
               {data.education.map((edu) => (
@@ -74,6 +74,17 @@ export default function ModernResume({ data }: { data: ResumeData }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {(data.languages || []).length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold uppercase tracking-wider mb-4 border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>Languages</h3>
+            <ul className="space-y-2 text-sm">
+              {(data.languages || []).map((lang) => (
+                <li key={lang.id} className="flex justify-between"><span>{lang.name}</span><span className="opacity-70">{lang.level}</span></li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -139,6 +150,28 @@ export default function ModernResume({ data }: { data: ResumeData }) {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {data.references !== undefined && (
+          <section className="mt-8">
+            <h3 className="text-xl font-bold uppercase tracking-wider mb-4 flex items-center gap-2" style={{ color: primaryColor }}>
+              <span className="w-8 h-px" style={{ backgroundColor: primaryColor }}></span> References
+            </h3>
+            {(data.references || []).length === 0 ? (
+              <p className="text-sm italic text-slate-500">References available on request.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {(data.references || []).map((ref) => (
+                  <div key={ref.id} className="text-sm">
+                    <div className="font-bold" style={{ color: primaryColor }}>{ref.name}</div>
+                    {(ref.role || ref.organization) && <div className="text-slate-600">{[ref.role, ref.organization].filter(Boolean).join(', ')}</div>}
+                    {ref.email && <div className="text-slate-500 text-xs">{ref.email}</div>}
+                    {ref.phone && <div className="text-slate-500 text-xs">{ref.phone}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>

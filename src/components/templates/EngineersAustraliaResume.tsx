@@ -80,18 +80,6 @@ export default function EngineersAustraliaResume({ data }: { data: ResumeData })
         </section>
       )}
 
-      {/* Skills */}
-      {data.skills.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-lg font-bold uppercase border-b mb-3 pb-1" style={{ borderColor: primaryColor, color: primaryColor }}>Software & Technical Skills</h2>
-          <ul className="list-disc list-inside columns-2 gap-8">
-            {data.skills.map((skill, index) => (
-              <li key={index} className="mb-1">{skill}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {/* Experience */}
       {data.experience.length > 0 && (
         <section className="mb-8">
@@ -137,6 +125,55 @@ export default function EngineersAustraliaResume({ data }: { data: ResumeData })
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Skills — placed after Experience and Projects per CDR convention */}
+      {data.skills.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold uppercase border-b mb-3 pb-1" style={{ borderColor: primaryColor, color: primaryColor }}>Software &amp; Technical Skills</h2>
+          <ul className="list-disc list-inside columns-2 gap-8">
+            {data.skills.map((skill, index) => (
+              <li key={index} className="mb-1">{skill}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Languages */}
+      {(data.languages || []).length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold uppercase border-b mb-3 pb-1" style={{ borderColor: primaryColor, color: primaryColor }}>Languages</h2>
+          <div className="grid grid-cols-[1fr_3fr] gap-4">
+            <div className="font-semibold" style={{ color: accentColor }}>Languages</div>
+            <ul className="space-y-1">
+              {(data.languages || []).map((lang) => (
+                <li key={lang.id}><span className="font-semibold">{lang.name}</span> &mdash; {lang.level}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {/* References */}
+      {data.references !== undefined && (
+        <section>
+          <h2 className="text-lg font-bold uppercase border-b mb-3 pb-1" style={{ borderColor: primaryColor, color: primaryColor }}>References</h2>
+          {(data.references || []).length === 0 ? (
+            <div className="pl-[25%] italic text-gray-600">References available on request.</div>
+          ) : (
+            <div className="space-y-4">
+              {(data.references || []).map((ref) => (
+                <div key={ref.id} className="grid grid-cols-[1fr_3fr] gap-4">
+                  <div className="font-semibold" style={{ color: accentColor }}>{ref.name}</div>
+                  <div>
+                    {(ref.role || ref.organization) && <div>{[ref.role, ref.organization].filter(Boolean).join(', ')}</div>}
+                    {(ref.email || ref.phone) && <div className="text-xs text-gray-600">{[ref.email, ref.phone].filter(Boolean).join(' | ')}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </div>

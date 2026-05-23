@@ -109,7 +109,7 @@ export default function GridPortfolio({ data }: { data: ResumeData }) {
           )}
 
           {data.education.length > 0 && (
-            <section>
+            <section className="mb-12">
               <h3 className="text-2xl font-bold mb-6 text-gray-900">Education</h3>
               <div className="space-y-6">
                 {data.education.map((edu) => (
@@ -122,8 +122,42 @@ export default function GridPortfolio({ data }: { data: ResumeData }) {
               </div>
             </section>
           )}
+
+          {(data.languages || []).length > 0 && (
+            <section>
+              <h3 className="text-2xl font-bold mb-6 text-gray-900">Languages</h3>
+              <div className="space-y-2">
+                {(data.languages || []).map((lang) => (
+                  <div key={lang.id} className="bg-white px-4 py-2 rounded-lg border shadow-sm flex justify-between text-sm" style={{ borderColor: `${primaryColor}20` }}>
+                    <span className="font-medium text-gray-800">{lang.name}</span>
+                    <span className="text-gray-500">{lang.level}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
+
+      {data.references !== undefined && (
+        <section className="mt-4">
+          <h3 className="text-2xl font-bold mb-6 text-gray-900">References</h3>
+          {(data.references || []).length === 0 ? (
+            <p className="text-gray-600 italic">Available on request.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(data.references || []).map((ref) => (
+                <div key={ref.id} className="bg-white p-5 rounded-xl border shadow-sm" style={{ borderColor: `${primaryColor}20` }}>
+                  <div className="font-bold text-gray-900">{ref.name}</div>
+                  {(ref.role || ref.organization) && <div className="text-sm text-gray-600 mb-1">{[ref.role, ref.organization].filter(Boolean).join(', ')}</div>}
+                  {ref.email && <div className="text-xs text-gray-500">{ref.email}</div>}
+                  {ref.phone && <div className="text-xs text-gray-500">{ref.phone}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

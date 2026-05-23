@@ -8,7 +8,8 @@ export interface ResumePageImage {
 
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
-const DEFAULT_MARGIN_MM = 12;
+const DEFAULT_MARGIN_MM = 0;
+const A4_RATIO = A4_HEIGHT_MM / A4_WIDTH_MM;
 
 export const a4ExportSettings = {
   pageWidthMm: A4_WIDTH_MM,
@@ -71,17 +72,17 @@ function choosePageEnd(candidates: number[], start: number, idealEnd: number, im
   return candidate && candidate > start ? candidate : Math.min(idealEnd, imageHeight);
 }
 
-function cropImagePage(image: HTMLImageElement, sourceY: number, sourceHeight: number) {
+function cropImagePage(image: HTMLImageElement, sourceY: number, sourceHeight: number, outputHeight: number, backgroundColor: string) {
   const canvas = document.createElement('canvas');
   canvas.width = image.width;
-  canvas.height = Math.ceil(sourceHeight);
+  canvas.height = Math.ceil(outputHeight);
 
   const context = canvas.getContext('2d');
   if (!context) {
     throw new Error('Could not create canvas context for export.');
   }
 
-  context.fillStyle = '#ffffff';
+  context.fillStyle = backgroundColor || '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(
     image,
@@ -104,42 +105,59 @@ function cropImagePage(image: HTMLImageElement, sourceY: number, sourceHeight: n
 
 export async function captureResumePages(container: HTMLElement): Promise<ResumePageImage[]> {
   const element = getTemplateElement(container);
+  const originalMinHeight = element.style.minHeight;
+  const originalHeight = element.style.height;
+  const computedStyle = window.getComputedStyle(element);
+  const backgroundColor = computedStyle.backgroundColor && computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)'
+    ? computedStyle.backgroundColor
+    : '#ffffff';
 
   if (document.fonts?.ready) {
     await document.fonts.ready;
   }
 
-  const dataUrl = await toPng(element, {
-    quality: 0.98,
-    pixelRatio: 2,
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    width: element.scrollWidth,
-    height: element.scrollHeight,
-    style: {
-      transform: 'none',
-      margin: '0',
-      boxShadow: 'none',
-    },
-  });
-
-  const image = await loadImage(dataUrl);
-  const elementRect = element.getBoundingClientRect();
-  const imageScale = image.width / elementRect.width;
-  const sourcePageHeight = image.width * (a4ExportSettings.contentHeightMm / a4ExportSettings.contentWidthMm);
-  const candidates = collectBreakCandidates(element, imageScale);
-  const pages: ResumePageImage[] = [];
-
-  let sourceY = 0;
-  while (sourceY < image.height - 1) {
-    const idealEnd = Math.min(sourceY + sourcePageHeight, image.height);
-    const sourceEnd = choosePageEnd(candidates, sourceY, idealEnd, image.height);
-    const sourceHeight = Math.max(1, sourceEnd - sourceY);
-    pages.push(cropImagePage(image, sourceY, sourceHeight));
-    sourceY = sourceEnd;
+  const targetPageHeight = Math.ceil(element.scrollWidth * A4_RATIO);
+  if (element.scrollHeight < targetPageHeight) {
+    element.style.minHeight = `${targetPageHeight}px`;
+    element.style.height = `${targetPageHeight}px`;
   }
 
-  return pages;
+  try {
+    const dataUrl = await toPng(element, {
+      quality: 0.98,
+      pixelRatio: 2,
+      cacheBust: true,
+      backgroundColor,
+      width: element.scrollWidth,
+      height: Math.max(element.scrollHeight, targetPageHeight),
+      style: {
+        transform: 'none',
+        margin: '0',
+        boxShadow: 'none',
+      },
+    });
+
+    const image = await loadImage(dataUrl);
+    const elementRect = element.getBoundingClientRect();
+    const imageScale = image.width / elementRect.width;
+    const sourcePageHeight = image.width * (a4ExportSettings.contentHeightMm / a4ExportSettings.contentWidthMm);
+    const candidates = collectBreakCandidates(element, imageScale);
+    const pages: ResumePageImage[] = [];
+
+    let sourceY = 0;
+    while (sourceY < image.height - 1) {
+      const idealEnd = Math.min(sourceY + sourcePageHeight, image.height);
+      const sourceEnd = choosePageEnd(candidates, sourceY, idealEnd, image.height);
+      const sourceHeight = Math.max(1, sourceEnd - sourceY);
+      pages.push(cropImagePage(image, sourceY, sourceHeight, sourcePageHeight, backgroundColor));
+      sourceY = sourceEnd;
+    }
+
+    return pages;
+  } finally {
+    element.style.minHeight = originalMinHeight;
+    element.style.height = originalHeight;
+  }
 }
 
 export function dataUrlToUint8Array(dataUrl: string) {
