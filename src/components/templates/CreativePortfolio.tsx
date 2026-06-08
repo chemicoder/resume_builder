@@ -2,13 +2,14 @@ import React from 'react';
 import { ResumeData } from '../../types';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 export default function CreativePortfolio({ data }: { data: ResumeData }) {
   const primaryColor = data.theme?.primary || '#f43f5e'; // rose-500
   const accentColor = data.theme?.accent || '#fb7185';
 
   return (
-    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-[#fafafa] shadow-lg min-h-[1056px] text-gray-800 font-sans overflow-hidden">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-[#fafafa] shadow-lg min-h-[1056px] text-gray-800 font-sans overflow-hidden" style={{ color: data.theme?.bodyText || undefined, fontFamily: cssFontStack(data.theme?.fontFamily) || undefined }}>
       {/* Hero Section */}
       <div className="relative p-12 text-white overflow-hidden" style={{ backgroundColor: primaryColor }}>
         {/* Decorative circle */}

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Mail, Loader2, CheckCircle2, Lock, UserRound } from 'lucide-react';
+import { Mail, Loader2, CheckCircle2, Lock, UserRound, KeyRound, ArrowLeft } from 'lucide-react';
 import { authRedirectUrl, enableAnonymousAuth, isAuthConfigured, supabase } from '../lib/supabaseClient';
 
-type AuthMode = 'password' | 'magic-link';
+type AuthMode = 'password' | 'magic-link' | 'reset';
 
 export default function AuthGate() {
   const [email, setEmail] = useState('');
@@ -11,6 +11,9 @@ export default function AuthGate() {
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sentTo, setSentTo] = useState('');
+  // When `sentMessage` is set it's shown in the confirmation panel instead of
+  // the default "we sent a verification link" copy — used for the reset flow.
+  const [sentMessage, setSentMessage] = useState<string>('');
   const [error, setError] = useState('');
 
   const ensureAuthConfigured = () => {
@@ -79,6 +82,31 @@ export default function AuthGate() {
     }
   };
 
+  const handlePasswordReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+
+    if (!ensureAuthConfigured()) return;
+    if (!email) {
+      setError('Enter your email to receive a reset link.');
+      return;
+    }
+
+    setIsSending(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: authRedirectUrl,
+    });
+    setIsSending(false);
+
+    if (resetError) {
+      setError(resetError.message);
+      return;
+    }
+
+    setSentTo(email);
+    setSentMessage(`We sent a password reset link to ${email}. Open it in this browser, then choose a new password.`);
+  };
+
   const handleAnonymousSignIn = async () => {
     setError('');
 
@@ -107,43 +135,60 @@ export default function AuthGate() {
         </div>
 
         {sentTo ? (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-emerald-800">
-            <div className="flex items-center gap-2 font-semibold mb-2">
-              <CheckCircle2 size={18} />
-              Check your email
+          <div className="space-y-3">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-emerald-800">
+              <div className="flex items-center gap-2 font-semibold mb-2">
+                <CheckCircle2 size={18} />
+                Check your email
+              </div>
+              <p className="text-sm leading-relaxed">
+                {sentMessage || (
+                  <>We sent a secure verification link to <span className="font-semibold">{sentTo}</span>. Open it in this browser to verify your email.</>
+                )}
+              </p>
             </div>
-            <p className="text-sm leading-relaxed">
-              We sent a secure verification link to <span className="font-semibold">{sentTo}</span>. Open it in this browser to verify your email.
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSentTo('');
+                setSentMessage('');
+                setError('');
+              }}
+              className="text-sm text-gray-600 hover:text-gray-900 font-medium flex items-center gap-1"
+            >
+              <ArrowLeft size={14} /> Back to sign in
+            </button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 border border-gray-200">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('password');
-                  setError('');
-                }}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  mode === 'password' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Password
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('magic-link');
-                  setError('');
-                }}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  mode === 'magic-link' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Email link
-              </button>
-            </div>
+            {mode !== 'reset' && (
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('password');
+                    setError('');
+                  }}
+                  className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    mode === 'password' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Password
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('magic-link');
+                    setError('');
+                  }}
+                  className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    mode === 'magic-link' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Email link
+                </button>
+              </div>
+            )}
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
@@ -184,15 +229,62 @@ export default function AuthGate() {
                   {isSending ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />}
                   {isSending ? 'Please wait...' : isCreatingAccount ? 'Create account' : 'Sign in'}
                 </button>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingAccount((value) => !value);
+                      setError('');
+                    }}
+                    className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+                  >
+                    {isCreatingAccount ? 'Have an account? Sign in' : 'Create an account'}
+                  </button>
+                  {!isCreatingAccount && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('reset');
+                        setError('');
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+              </form>
+            ) : mode === 'reset' ? (
+              <form onSubmit={handlePasswordReset} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5">Enter the email you signed up with. We&apos;ll send a link to set a new password.</p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSending}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2"
+                >
+                  {isSending ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+                  {isSending ? 'Sending reset link...' : 'Send reset link'}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setIsCreatingAccount((value) => !value);
+                    setMode('password');
                     setError('');
                   }}
-                  className="w-full text-sm text-gray-600 hover:text-gray-900 font-medium"
+                  className="w-full text-sm text-gray-600 hover:text-gray-900 font-medium flex items-center justify-center gap-1"
                 >
-                  {isCreatingAccount ? 'Already have an account? Sign in' : 'New user? Create an account'}
+                  <ArrowLeft size={14} /> Back to sign in
                 </button>
               </form>
             ) : (

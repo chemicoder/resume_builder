@@ -1,13 +1,14 @@
 import React from 'react';
 import { ResumeData } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 export default function EngineersAustraliaResume({ data }: { data: ResumeData }) {
   const primaryColor = data.theme?.primary || '#111827';
   const accentColor = data.theme?.accent || '#374151';
 
   return (
-    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-gray-900 font-sans text-sm leading-relaxed">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-12 shadow-lg min-h-[1056px] text-gray-900 font-sans text-sm leading-relaxed" style={{ color: data.theme?.bodyText || undefined, fontFamily: cssFontStack(data.theme?.fontFamily) || undefined }}>
       {/* Header */}
       <header className="mb-8 border-b-2 pb-4 flex justify-between items-start" style={{ borderColor: primaryColor }}>
         <div className="flex-1">

@@ -2,13 +2,14 @@ import React from 'react';
 import { ResumeData } from '../../types';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 export default function GridPortfolio({ data }: { data: ResumeData }) {
   const primaryColor = data.theme?.primary || '#2563eb'; // blue-600
   const accentColor = data.theme?.accent || '#3b82f6'; // blue-500
 
   return (
-    <div data-resume-page className="w-full max-w-[1000px] mx-auto bg-[#f8f9fa] shadow-xl min-h-[1056px] font-sans text-gray-800 p-8 md:p-12 relative">
+    <div data-resume-page className="w-full max-w-[1000px] mx-auto bg-[#f8f9fa] shadow-xl min-h-[1056px] font-sans text-gray-800 p-8 md:p-12 relative" style={{ color: data.theme?.bodyText || undefined, fontFamily: cssFontStack(data.theme?.fontFamily) || undefined }}>
       {/* QR Code */}
       {data.showQrCode && data.qrCodeLink && (
         <div className="absolute top-8 right-8 bg-white p-2 rounded-lg shadow-md border border-gray-100 z-20">

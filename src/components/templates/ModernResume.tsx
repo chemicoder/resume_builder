@@ -2,13 +2,14 @@ import React from 'react';
 import { ResumeData } from '../../types';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 export default function ModernResume({ data }: { data: ResumeData }) {
   const primaryColor = data.theme?.primary || '#1e293b'; // slate-800 default
   const accentColor = data.theme?.accent || '#3b82f6';
 
   return (
-    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] flex font-sans text-gray-800">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white shadow-lg min-h-[1056px] flex font-sans text-gray-800" style={{ color: data.theme?.bodyText || undefined, fontFamily: cssFontStack(data.theme?.fontFamily) || undefined }}>
       {/* Left Column */}
       <div className="w-1/3 text-white p-8" style={{ backgroundColor: primaryColor }}>
         {data.personalInfo.profilePicture && (

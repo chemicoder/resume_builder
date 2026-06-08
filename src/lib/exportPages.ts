@@ -146,7 +146,9 @@ function cropImagePage(
   );
 
   return {
-    dataUrl: canvas.toDataURL('image/png', 0.98),
+    // PNG is lossless — the second arg (quality) is ignored for image/png,
+    // but we drop it anyway to make the intent obvious.
+    dataUrl: canvas.toDataURL('image/png'),
     width: canvas.width,
     height: canvas.height,
   };
@@ -172,9 +174,16 @@ export async function captureResumePages(container: HTMLElement): Promise<Resume
   }
 
   try {
+    // pixelRatio drives the rasterized resolution. 3× is the sweet spot —
+    // print-quality (≈216dpi at A4) without ballooning memory; html-to-image
+    // tops out around 4× on most devices before the canvas hits browser
+    // limits and silently fails.
+    const exportPixelRatio = 3;
     const dataUrl = await toPng(element, {
-      quality: 0.98,
-      pixelRatio: 2,
+      // `quality` is irrelevant for image/png (lossless) — keep 1.0 to be
+      // explicit and avoid any future library default change to lossy.
+      quality: 1,
+      pixelRatio: exportPixelRatio,
       cacheBust: true,
       backgroundColor,
       width: element.scrollWidth,

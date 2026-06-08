@@ -12,11 +12,16 @@ import CreativePortfolio from './components/templates/CreativePortfolio';
 import DeveloperPortfolio from './components/templates/DeveloperPortfolio';
 import ExpressiveResume from './components/templates/ExpressiveResume';
 import AuthGate from './components/AuthGate';
-import { LayoutTemplate, Download, Undo, Redo, ChevronDown, LogOut } from 'lucide-react';
+import OnboardingGuide, { shouldAutoShowOnboarding, markOnboardingSeen } from './components/OnboardingGuide';
+import ResetPasswordDialog from './components/ResetPasswordDialog';
+import { useToast } from './components/Toast';
+import { LayoutTemplate, Download, Undo, Redo, ChevronDown, LogOut, HelpCircle, Info, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LZString from 'lz-string';
 import { loadSharedResume, trackEvent } from './lib/analytics';
 import { supabase } from './lib/supabaseClient';
+import { useEntitlements } from './lib/entitlements';
+import { loadDraft, saveDraftDebounced, clearDraft } from './lib/localDraft';
 import type { Session } from '@supabase/supabase-js';
 
 type TemplateType =
@@ -38,7 +43,10 @@ type TemplateType =
   | 'architect'
   | 'consultant'
   | 'magazine'
-  | 'neoclassic';
+  | 'neoclassic'
+  | 'pastel'
+  | 'slate'
+  | 'midnight';
 
 const TEMPLATE_OPTIONS: { value: TemplateType; label: string; group: string }[] = [
   { value: 'minimal', label: 'Minimal', group: 'Professional' },
@@ -57,6 +65,12 @@ const TEMPLATE_OPTIONS: { value: TemplateType; label: string; group: string }[] 
   { value: 'executive', label: 'Executive Brief', group: 'Professional' },
   { value: 'consultant', label: 'Consultant Report', group: 'Professional' },
   { value: 'architect', label: 'Architect Blueprint', group: 'Creative' },
+  { value: 'atelier', label: 'Atelier Studio', group: 'Creative' },
+  { value: 'magazine', label: 'Magazine Cover', group: 'Creative' },
+  { value: 'neoclassic', label: 'Neo Classic', group: 'Formal' },
+  { value: 'pastel', label: 'Pastel', group: 'Creative' },
+  { value: 'slate', label: 'Slate Pro', group: 'Professional' },
+  { value: 'midnight', label: 'Midnight', group: 'Creative' },
 ];
 
 export default function App() {
@@ -69,8 +83,23 @@ export default function App() {
   // Preview mode: read-only view shown when someone opens a shared link.
   // No sidebar, prominent "Download PDF" CTA, plus "Edit this resume" to exit.
   const [previewMode, setPreviewMode] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showDocxHint, setShowDocxHint] = useState(false);
+  // True when Supabase routes us back from a "Reset password" email — we then
+  // show a small dialog letting the user set a new password before they can
+  // use the editor again.
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
   const trackedInitialView = useRef(false);
+  const toast = useToast();
+  // True once this session has loaded someone else's shared resume — we then
+  // suppress draft restore/autosave so a viewer never overwrites their own
+  // saved work or persists a stranger's resume as their draft.
+  const loadedFromShare = useRef(false);
+  // Gates autosave until after the initial mount effects have decided whether
+  // we're restoring a draft or a shared link.
+  const draftReady = useRef(false);
+  const { entitlement } = useEntitlements(session);
   const isLegacyShareHash = () => {
     const hash = window.location.hash.slice(1);
     return Boolean(hash && !hash.includes('access_token=') && !hash.includes('error=') && !hash.includes('type='));
@@ -101,6 +130,7 @@ export default function App() {
     const sharedSlug = params.get('share');
 
     if (sharedSlug) {
+      loadedFromShare.current = true;
       loadSharedResume(sharedSlug)
         .then((shared) => {
           applySharedData(shared.data, shared.template);
@@ -109,13 +139,14 @@ export default function App() {
         })
         .catch((error) => {
           console.error('Failed to load shared resume', error);
-          alert('This shared resume could not be loaded.');
+          toast('This shared resume could not be loaded.', 'error');
         });
       return;
     }
 
     const hash = isLegacyShareHash() ? window.location.hash.slice(1) : '';
     if (hash) {
+      loadedFromShare.current = true;
       try {
         const decoded = LZString.decompressFromEncodedURIComponent(hash);
         if (decoded) {
@@ -153,8 +184,30 @@ export default function App() {
       } catch (e) {
         console.error("Failed to parse resume from URL", e);
       }
+      return;
     }
+
+    // No shared link → this is the user's own editor. Restore their autosaved
+    // draft so a refresh doesn't lose work.
+    const draft = loadDraft();
+    if (draft) {
+      setData({
+        ...initialData,
+        ...draft.data,
+        personalInfo: { ...initialData.personalInfo, ...(draft.data.personalInfo || {}) },
+        references: draft.data.references,
+      });
+      if (draft.template) setTemplate(draft.template as TemplateType);
+    }
+    draftReady.current = true;
   }, []);
+
+  // Autosave the editor draft whenever data or template changes. Suppressed
+  // while viewing a shared resume and until the initial restore has run.
+  useEffect(() => {
+    if (!draftReady.current || loadedFromShare.current || previewMode) return;
+    saveDraftDebounced(data, template);
+  }, [data, template, previewMode]);
 
   useEffect(() => {
     if (!supabase) {
@@ -167,9 +220,12 @@ export default function App() {
       setIsCheckingAuth(false);
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       setIsCheckingAuth(false);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+      }
     });
 
     return () => {
@@ -183,12 +239,41 @@ export default function App() {
     trackEvent('page_view', { template });
   }, [template]);
 
+  // Auto-show the first-time guide once auth has resolved and we know the
+  // user is in editor mode (not viewing someone else's shared resume).
+  useEffect(() => {
+    if (previewMode || isCheckingAuth) return;
+    if (!session) return;
+    if (shouldAutoShowOnboarding()) {
+      setShowOnboarding(true);
+    }
+  }, [previewMode, isCheckingAuth, session]);
+
+  const handleCloseOnboarding = () => {
+    setShowOnboarding(false);
+    markOnboardingSeen();
+  };
+
   const handleExitPreview = () => {
     setPreviewMode(false);
-    // Clear the hash so refreshing or copying the URL doesn't re-enter preview.
-    if (window.location.hash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
+    // The user has chosen to edit this resume as their own, so from here on we
+    // treat it as their working draft (re-enable autosave).
+    loadedFromShare.current = false;
+    draftReady.current = true;
+    // Clear the share query param + hash so refreshing or copying the URL
+    // doesn't re-enter preview or reload the shared resume.
+    if (window.location.hash || new URLSearchParams(window.location.search).has('share')) {
+      history.replaceState(null, '', window.location.pathname);
     }
+  };
+
+  const handleStartOver = () => {
+    if (!window.confirm('Start over with a blank resume? This clears your saved draft on this device.')) return;
+    setPast([]);
+    setFuture([]);
+    clearDraft();
+    setData(initialData);
+    toast('Cleared. Starting from a blank resume.', 'info');
   };
 
   const handleSignOut = async () => {
@@ -196,8 +281,13 @@ export default function App() {
     setSession(null);
   };
 
+  // Cap undo history so long editing sessions don't grow memory without bound
+  // — each snapshot is a full ResumeData clone (which can include a base64
+  // profile image). Keep the most recent N states.
+  const MAX_HISTORY = 50;
+
   const handleDataChange = (newData: ResumeData) => {
-    setPast(prev => [...prev, data]);
+    setPast(prev => [...prev, data].slice(-MAX_HISTORY));
     setData(newData);
     setFuture([]);
   };
@@ -229,7 +319,7 @@ export default function App() {
       trackEvent('export_pdf', { template });
     } catch (error) {
       console.error('Failed to generate PDF', error);
-      alert('Failed to generate PDF. Please try again.');
+      toast('Failed to generate PDF. Please try again.', 'error');
     }
   };
 
@@ -240,7 +330,7 @@ export default function App() {
       trackEvent('export_docx', { template });
     } catch (error) {
       console.error('Failed to generate DOCX', error);
-      alert('Failed to generate Word document. Please try again.');
+      toast('Failed to generate Word document. Please try again.', 'error');
     }
   };
 
@@ -284,6 +374,12 @@ export default function App() {
         return <ExpressiveResume data={data} variant="magazine" />;
       case 'neoclassic':
         return <ExpressiveResume data={data} variant="neoclassic" />;
+      case 'pastel':
+        return <ExpressiveResume data={data} variant="pastel" />;
+      case 'slate':
+        return <ExpressiveResume data={data} variant="slate" />;
+      case 'midnight':
+        return <ExpressiveResume data={data} variant="midnight" />;
       default:
         return <MinimalResume data={data} />;
     }
@@ -346,7 +442,7 @@ export default function App() {
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans print:h-auto print:overflow-visible print:bg-white">
       {/* Sidebar - Form */}
       <div className="print:hidden h-full">
-        <Sidebar data={data} onChange={handleDataChange} template={template} />
+        <Sidebar data={data} onChange={handleDataChange} template={template} entitlement={entitlement} />
       </div>
 
       {/* Main Content - Preview */}
@@ -412,12 +508,52 @@ export default function App() {
               <Download size={18} />
               Export PDF
             </button>
+            <div className="relative">
+              <button
+                onClick={handleExportDocx}
+                className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-sm"
+              >
+                <Download size={18} />
+                Export DOCX
+              </button>
+              <button
+                type="button"
+                onMouseEnter={() => setShowDocxHint(true)}
+                onMouseLeave={() => setShowDocxHint(false)}
+                onFocus={() => setShowDocxHint(true)}
+                onBlur={() => setShowDocxHint(false)}
+                onClick={() => setShowDocxHint((v) => !v)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-400 text-amber-900 flex items-center justify-center shadow-sm hover:bg-amber-500 transition-colors"
+                aria-label="About DOCX export"
+              >
+                <Info size={12} />
+              </button>
+              {showDocxHint && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-amber-200 rounded-lg shadow-xl p-3 text-xs text-gray-700 z-20">
+                  <div className="font-semibold text-amber-800 mb-1 flex items-center gap-1.5">
+                    <Info size={14} /> About DOCX export
+                  </div>
+                  <p>Word can&apos;t reproduce every CSS effect from the preview. The DOCX is editable but heavy templates (Creative, Developer, Luxe…) are approximated.</p>
+                  <p className="mt-2"><span className="font-semibold">Best Word results:</span> use <span className="text-blue-700 font-semibold">Minimal</span> or <span className="text-blue-700 font-semibold">Harvard</span>. For pixel-perfect output, use Export PDF.</p>
+                  <p className="mt-2 text-gray-500">Tip: press <kbd className="px-1 py-0.5 bg-gray-100 border border-gray-300 rounded text-[10px] font-mono">Enter</kbd> on a new line in description fields to create bullet points.</p>
+                </div>
+              )}
+            </div>
             <button
-              onClick={handleExportDocx}
-              className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-sm"
+              onClick={handleStartOver}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
+              title="Start over (clear saved draft)"
+              aria-label="Start over with a blank resume"
             >
-              <Download size={18} />
-              Export DOCX
+              <RotateCcw size={18} />
+            </button>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              title="Show first-time guide"
+              aria-label="Show first-time guide"
+            >
+              <HelpCircle size={18} />
             </button>
             <button
               onClick={handleSignOut}
@@ -451,6 +587,10 @@ export default function App() {
           </div>
         </div>
       </div>
+      <OnboardingGuide open={showOnboarding} onClose={handleCloseOnboarding} />
+      {isPasswordRecovery && (
+        <ResetPasswordDialog onDone={() => setIsPasswordRecovery(false)} />
+      )}
     </div>
   );
 }

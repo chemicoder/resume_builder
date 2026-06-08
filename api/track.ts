@@ -42,6 +42,17 @@ export default async function handler(request: any, response: any) {
       return;
     }
 
+    // Cap visitor/session ids and metadata so the events table can't be used
+    // to store arbitrary large blobs.
+    if (visitorId.length > 128 || sessionId.length > 128) {
+      response.status(400).json({ error: 'Invalid analytics event.' });
+      return;
+    }
+    let metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
+    if (Buffer.byteLength(JSON.stringify(metadata), 'utf8') > 4096) {
+      metadata = {};
+    }
+
     const now = new Date().toISOString();
     const userAgent = String(request.headers['user-agent'] || '').slice(0, 512);
     const ip = getClientIp(request);
@@ -69,7 +80,7 @@ export default async function handler(request: any, response: any) {
         path: String(body.path || '').slice(0, 1024),
         referrer: String(body.referrer || '').slice(0, 1024),
         template: body.template ? String(body.template).slice(0, 64) : null,
-        metadata: body.metadata || {},
+        metadata,
         ip_address: ip,
         user_agent: userAgent,
       }),

@@ -7,6 +7,11 @@ export const config = {
 
 const shareTables = ['rb_shared_resumes', 'shared_resumes'];
 
+// Cap the stored resume payload. A resume with an embedded base64 profile
+// photo is realistically well under this; anything larger is almost certainly
+// abuse (using the share table as free storage) and is rejected.
+const MAX_RESUME_BYTES = 2 * 1024 * 1024; // 2 MB
+
 function getSupabaseConfig() {
   return {
     url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
@@ -168,6 +173,14 @@ export default async function handler(request: any, response: any) {
 
       if (!resumeData || typeof resumeData !== 'object') {
         response.status(400).json({ error: 'Missing resume data.' });
+        return;
+      }
+
+      // Reject oversized payloads so the share table can't be abused as
+      // unbounded free storage.
+      const serializedSize = Buffer.byteLength(JSON.stringify(resumeData), 'utf8');
+      if (serializedSize > MAX_RESUME_BYTES) {
+        response.status(413).json({ error: 'Resume is too large to share. Try removing or shrinking the profile photo.' });
         return;
       }
 

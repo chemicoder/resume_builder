@@ -3,6 +3,12 @@ import { Language, LanguageLevel, LanguageSkills, ResumeData } from '../types';
 import { User, Briefcase, GraduationCap, Code, FolderGit2, Plus, Trash2, Sparkles, Upload, Image as ImageIcon, Loader2, FileText, Palette, Link, Share2, Copy, Languages as LanguagesIcon, UserCheck } from 'lucide-react';
 import { generateSummaryAI, generateProjectDescriptionAI, parseDocumentAI, tailorResumeAI } from '../lib/gemini';
 import { createSharedResume, trackEvent } from '../lib/analytics';
+import { FONT_OPTIONS } from '../lib/fonts';
+import { parseResumeLocally } from '../lib/resumeParse';
+import type { Entitlement } from '../lib/entitlements';
+import { SALES_EMAIL } from '../lib/entitlements';
+import { useToast } from './Toast';
+import { copyToClipboard } from '../lib/clipboard';
 import { QRCodeSVG } from 'qrcode.react';
 import LZString from 'lz-string';
 
@@ -12,6 +18,7 @@ interface SidebarProps {
   data: ResumeData;
   onChange: (data: ResumeData) => void;
   template: string;
+  entitlement: Entitlement;
 }
 
 function stripEmpty(obj: any): any {
@@ -34,7 +41,9 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-export default function Sidebar({ data, onChange, template }: SidebarProps) {
+export default function Sidebar({ data, onChange, template, entitlement }: SidebarProps) {
+  const toast = useToast();
+  const aiEnabled = entitlement.aiAccess;
   const [isParsing, setIsParsing] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [generatingProjectIndex, setGeneratingProjectIndex] = useState<number | null>(null);
@@ -45,8 +54,12 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   const [isCreatingShare, setIsCreatingShare] = useState(false);
 
   const handleTailorResume = async () => {
+    if (!aiEnabled) {
+      toast(`Tailoring is a paid AI feature. Email ${SALES_EMAIL} to enable AI access.`, 'info');
+      return;
+    }
     if (!data.targetJob?.description) {
-      alert("Please provide a job description to tailor the resume.");
+      toast('Please provide a job description to tailor the resume.', 'info');
       return;
     }
     setIsTailoring(true);
@@ -58,9 +71,10 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
         targetJob: data.targetJob
       });
       trackEvent('ai_tailor', { template, metadata: { atsScore } });
+      toast(`Resume tailored. ATS match score: ${atsScore}/100.`, 'success');
     } catch (error) {
       console.error(error);
-      alert(getErrorMessage(error, "Failed to tailor resume. Please try again."));
+      toast(getErrorMessage(error, 'Failed to tailor resume. Please try again.'), 'error');
     } finally {
       setIsTailoring(false);
     }
@@ -87,11 +101,13 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       setShareUrl(shared.url);
       setShowQR(true);
       trackEvent('share_created', { template, metadata: { slug: shared.slug, mode: shared.mode || 'server' } });
+      toast('Share link created.', 'success');
     } catch (error) {
       console.error('Failed to create server share link', error);
       setShareUrl('');
       setShowQR(true);
       trackEvent('share_created', { template, metadata: { mode: 'legacy_hash_fallback' } });
+      toast('Created an offline share link (server unavailable).', 'info');
     } finally {
       setIsCreatingShare(false);
     }
@@ -120,8 +136,17 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
     onChange({ ...data, [field]: newArray });
   };
 
+  // Split comma-separated input into a clean array. We keep a single trailing
+  // empty entry while the user is mid-type (so the comma they just pressed
+  // isn't deleted under their cursor), but drop empties everywhere else so
+  // templates never render stray bullets / "•  •" separators.
+  const splitCsv = (value: string): string[] => {
+    const parts = value.split(',').map((s) => s.trim());
+    return parts.filter((part, index) => part !== '' || index === parts.length - 1);
+  };
+
   const handleSkillsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange({ ...data, skills: e.target.value.split(',').map(s => s.trim()) });
+    onChange({ ...data, skills: splitCsv(e.target.value) });
   };
 
   const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,13 +165,17 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files ?? []) as File[];
+    // Reset the input so re-uploading the same file fires the change again.
+    e.currentTarget.value = '';
     if (files.length === 0) return;
-    
+
     setIsParsing(true);
     try {
-      const filePromises = files.map(async file => {
-        if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
-          try {
+      if (aiEnabled) {
+        // AI path: package all files (PDFs, images, certificates) and let
+        // Gemini extract fields. This is the full-fidelity option.
+        const filePromises = files.map(async file => {
+          if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
             const arrayBuffer = await file.arrayBuffer();
             const result = await mammoth.extractRawText({ arrayBuffer });
             const blob = new Blob([result.value], { type: 'text/plain' });
@@ -159,29 +188,49 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
               reader.onerror = reject;
               reader.readAsDataURL(blob);
             });
-          } catch (e) {
-            console.error("Failed to parse DOCX", e);
-            throw e;
           }
-        }
-        return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve({ base64, mimeType: file.type });
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+          return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve({ base64, mimeType: file.type });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
         });
-      });
-      
-      const processedFiles = await Promise.all(filePromises);
-      const parsedData = await parseDocumentAI(data, processedFiles);
-      onChange(parsedData);
-      trackEvent('ai_import', { template, metadata: { source: 'upload', fileCount: files.length } });
+
+        const processedFiles = await Promise.all(filePromises);
+        const parsedData = await parseDocumentAI(data, processedFiles);
+        onChange(parsedData);
+        trackEvent('ai_import', { template, metadata: { source: 'upload', fileCount: files.length } });
+        toast(`Extracted details from ${files.length} file${files.length > 1 ? 's' : ''}.`, 'success');
+      } else {
+        // Free path: a local heuristic parser handles a single resume PDF or
+        // DOCX file. Only one file at a time, and only resume-shaped inputs.
+        if (files.length > 1) {
+          toast(`Multi-file extraction is a paid AI feature. Free import accepts a single PDF or Word file. Email ${SALES_EMAIL} for bulk import.`, 'info');
+          return;
+        }
+        const file = files[0];
+        const lowerName = file.name.toLowerCase();
+        const isResumeFormat =
+          file.type === 'application/pdf' ||
+          file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          lowerName.endsWith('.pdf') ||
+          lowerName.endsWith('.docx');
+        if (!isResumeFormat) {
+          toast(`Free import supports PDF or Word resumes only. Images, certificates, and transcripts require AI — email ${SALES_EMAIL}.`, 'info');
+          return;
+        }
+        const parsed = await parseResumeLocally(file, data);
+        onChange(parsed);
+        trackEvent('ai_import', { template, metadata: { source: 'upload_local', fileCount: 1 } });
+        toast('Imported from your resume. Review the fields and adjust as needed.', 'success');
+      }
     } catch (error) {
       console.error("Failed to parse documents", error);
-      alert(getErrorMessage(error, "Failed to parse documents. Please try again."));
+      toast(getErrorMessage(error, 'Failed to parse documents. Please try again.'), 'error');
     } finally {
       setIsParsing(false);
     }
@@ -189,21 +238,24 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
   const handleUrlImport = async () => {
     if (!documentUrl) return;
+    if (!aiEnabled) {
+      toast(`URL import uses AI extraction, a paid feature. Email ${SALES_EMAIL} to enable AI access.`, 'info');
+      return;
+    }
     setIsParsing(true);
     try {
       const parsedData = await parseDocumentAI(data, undefined, documentUrl);
       onChange(parsedData);
       trackEvent('ai_import', { template, metadata: { source: 'url' } });
       setDocumentUrl('');
+      toast('Imported details from the link.', 'success');
     } catch (error) {
       console.error("Failed to parse URL", error);
       const message = getErrorMessage(error, "Failed to extract data from URL. Please try again.");
-      if (message.includes('Gemini API key')) {
-        alert(message);
-      } else if (documentUrl.includes('linkedin.com')) {
-        alert("Failed to extract data from LinkedIn. LinkedIn blocks automated access. Please go to your LinkedIn profile, click 'More' -> 'Save to PDF', and upload the PDF instead.");
+      if (documentUrl.includes('linkedin.com')) {
+        toast("LinkedIn blocks automated access. On your profile, use 'More' → 'Save to PDF' and upload the PDF instead.", 'error');
       } else {
-        alert(message);
+        toast(message, 'error');
       }
     } finally {
       setIsParsing(false);
@@ -211,6 +263,10 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
   };
 
   const handleGenerateSummary = async () => {
+    if (!aiEnabled) {
+      toast(`Summary generation is a paid AI feature. Email ${SALES_EMAIL} to enable AI access.`, 'info');
+      return;
+    }
     setIsGeneratingSummary(true);
     try {
       const summary = await generateSummaryAI(data.personalInfo.jobTitle, data.skills, data.experience);
@@ -223,12 +279,16 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       }
     } catch (error) {
       console.error(error);
-      alert(getErrorMessage(error, "Failed to generate summary."));
+      toast(getErrorMessage(error, 'Failed to generate summary.'), 'error');
     }
     setIsGeneratingSummary(false);
   };
 
   const handleGenerateProjectDesc = async (index: number) => {
+    if (!aiEnabled) {
+      toast(`Project description AI is a paid feature. Email ${SALES_EMAIL} to enable AI access.`, 'info');
+      return;
+    }
     const proj = data.projects[index];
     setGeneratingProjectIndex(index);
     try {
@@ -239,7 +299,7 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
       }
     } catch (error) {
       console.error(error);
-      alert(getErrorMessage(error, "Failed to generate project description."));
+      toast(getErrorMessage(error, 'Failed to generate project description.'), 'error');
     }
     setGeneratingProjectIndex(null);
   };
@@ -275,9 +335,9 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
             )}
             <p className="text-xs text-purple-600 mb-3 text-center">Recipients open this link in preview mode with a one-click "Download PDF" button — no edits required.</p>
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(activeShareUrl);
-                alert('Link copied to clipboard!');
+              onClick={async () => {
+                const ok = await copyToClipboard(activeShareUrl);
+                toast(ok ? 'Link copied to clipboard.' : 'Could not copy automatically — select and copy the link manually.', ok ? 'success' : 'error');
               }}
               className="w-full flex items-center justify-center gap-2 bg-white border border-purple-200 text-purple-700 py-2 rounded hover:bg-purple-100 transition-colors text-sm font-medium"
             >
@@ -290,32 +350,52 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
       {/* Import Section */}
       <section className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-        <div className="flex items-center gap-2 mb-2 text-blue-800 font-semibold">
-          <FileText size={18} />
-          <h3>Smart Import</h3>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 text-blue-800 font-semibold">
+            <FileText size={18} />
+            <h3>Smart Import</h3>
+          </div>
+          <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${aiEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {aiEnabled ? 'AI enabled' : 'Free mode'}
+          </span>
         </div>
-        <p className="text-xs text-blue-600 mb-3">Upload multiple PDFs or Images (resumes, transcripts, certificates) or provide a link to auto-fill the form using AI.</p>
-        
+        <p className="text-xs text-blue-600 mb-3">
+          {aiEnabled
+            ? 'Upload multiple PDFs or images (resumes, transcripts, certificates) or provide a link to auto-fill the form using AI.'
+            : 'Free import: upload a single resume in PDF or Word format to auto-fill the form. We extract text locally — no AI is used.'}
+        </p>
+
         <div className="space-y-3">
           <label className="flex items-center justify-center gap-2 w-full bg-white border border-blue-200 text-blue-600 py-2 rounded cursor-pointer hover:bg-blue-50 transition-colors">
             {isParsing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            <span className="text-sm font-medium">{isParsing ? 'Parsing Documents...' : 'Upload Documents'}</span>
-            <input type="file" multiple accept="application/pdf,image/*,.doc,.docx,.txt" className="hidden" onChange={handleResumeUpload} disabled={isParsing} />
+            <span className="text-sm font-medium">
+              {isParsing ? 'Parsing Documents...' : aiEnabled ? 'Upload Documents (AI)' : 'Upload Resume (PDF / Word)'}
+            </span>
+            <input
+              type="file"
+              multiple={aiEnabled}
+              accept={aiEnabled ? 'application/pdf,image/*,.doc,.docx,.txt' : 'application/pdf,.pdf,.docx'}
+              className="hidden"
+              onChange={handleResumeUpload}
+              disabled={isParsing}
+            />
           </label>
 
           <div className="flex gap-2">
-            <input 
-              type="url" 
+            <input
+              type="url"
               value={documentUrl}
               onChange={(e) => setDocumentUrl(e.target.value)}
-              placeholder="Paste LinkedIn or Portfolio URL" 
-              className="flex-1 p-2 text-sm border border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-              disabled={isParsing}
+              placeholder={aiEnabled ? 'Paste LinkedIn or Portfolio URL' : 'URL import requires AI access'}
+              className="flex-1 p-2 text-sm border border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-400"
+              disabled={isParsing || !aiEnabled}
+              title={aiEnabled ? undefined : 'URL extraction is a paid AI feature'}
             />
-            <button 
+            <button
               onClick={handleUrlImport}
-              disabled={isParsing || !documentUrl}
+              disabled={isParsing || !documentUrl || !aiEnabled}
               className="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+              title={aiEnabled ? undefined : 'URL extraction is a paid AI feature'}
             >
               {isParsing ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
             </button>
@@ -323,6 +403,11 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
           {documentUrl.includes('linkedin.com') && (
             <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
               Note: LinkedIn often blocks automated access. If the import fails or is incomplete, please use the "Save to PDF" option on your LinkedIn profile and upload the PDF instead.
+            </p>
+          )}
+          {!aiEnabled && (
+            <p className="text-[11px] text-gray-600 bg-white/60 border border-blue-100 rounded p-2 leading-relaxed">
+              <span className="font-semibold text-gray-800">AI extraction is a paid feature.</span> Unlock multi-file upload (images, transcripts, certificates), URL import (LinkedIn), AI summary writing, and ATS tailoring by contacting <a href={`mailto:${SALES_EMAIL}`} className="text-blue-700 underline">{SALES_EMAIL}</a>.
             </p>
           )}
         </div>
@@ -338,22 +423,80 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <label className="block text-xs text-gray-500 mb-1">Primary Color</label>
-              <input 
-                type="color" 
-                value={data.theme?.primary || '#2563eb'} 
-                onChange={(e) => onChange({...data, theme: {...data.theme, primary: e.target.value}})} 
-                className="w-full h-10 rounded cursor-pointer" 
+              <input
+                type="color"
+                value={data.theme?.primary || '#2563eb'}
+                onChange={(e) => onChange({...data, theme: {...data.theme, primary: e.target.value}})}
+                className="w-full h-10 rounded cursor-pointer"
               />
             </div>
             <div className="flex-1">
               <label className="block text-xs text-gray-500 mb-1">Accent Color</label>
-              <input 
-                type="color" 
-                value={data.theme?.accent || '#3b82f6'} 
-                onChange={(e) => onChange({...data, theme: {...data.theme, accent: e.target.value}})} 
-                className="w-full h-10 rounded cursor-pointer" 
+              <input
+                type="color"
+                value={data.theme?.accent || '#3b82f6'}
+                onChange={(e) => onChange({...data, theme: {...data.theme, accent: e.target.value}})}
+                className="w-full h-10 rounded cursor-pointer"
               />
             </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-xs text-gray-500 mb-1">Body Text Color <span className="text-gray-400">(optional)</span></label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={data.theme?.bodyText || '#1f2937'}
+                  onChange={(e) => onChange({...data, theme: {...data.theme, bodyText: e.target.value}})}
+                  className="w-10 h-10 rounded cursor-pointer"
+                />
+                <span className="text-xs text-gray-500 font-mono flex-1 truncate">
+                  {data.theme?.bodyText || 'Template default'}
+                </span>
+                {data.theme?.bodyText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { bodyText: _bodyText, ...rest } = data.theme;
+                      onChange({...data, theme: rest as typeof data.theme});
+                    }}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                    title="Reset to template default"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">Overrides the body text color across the resume. Headings still use Primary/Accent.</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Font Family <span className="text-gray-400">(optional)</span></label>
+            <div className="flex items-center gap-2">
+              <select
+                value={data.theme?.fontFamily || ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (!value) {
+                    const { fontFamily: _fontFamily, ...rest } = data.theme;
+                    onChange({ ...data, theme: rest as typeof data.theme });
+                  } else {
+                    onChange({ ...data, theme: { ...data.theme, fontFamily: value } });
+                  }
+                }}
+                className="flex-1 p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                <option value="">— Template default —</option>
+                {(['Sans-serif', 'Serif', 'Monospace', 'Display'] as const).map((group) => (
+                  <optgroup key={group} label={group}>
+                    {FONT_OPTIONS.filter((o) => o.group === group).map((o) => (
+                      <option key={o.value} value={o.value} style={{ fontFamily: o.css }}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Applies to preview, PDF, and Word. Word-installed fonts give the best DOCX results.</p>
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -427,13 +570,14 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
           <div className="relative">
             <div className="flex justify-between items-center mb-1">
               <span className="text-xs font-medium text-gray-500">Professional Summary</span>
-              <button 
-                onClick={handleGenerateSummary} 
+              <button
+                onClick={handleGenerateSummary}
                 disabled={isGeneratingSummary}
                 className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                title={aiEnabled ? undefined : `Paid feature — contact ${SALES_EMAIL}`}
               >
                 {isGeneratingSummary ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                Generate with AI
+                Generate with AI{!aiEnabled && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600 font-semibold">PAID</span>}
               </button>
             </div>
             <textarea name="summary" value={data.personalInfo.summary} onChange={handlePersonalInfoChange} placeholder="Professional Summary" rows={4} className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none resize-none" />
@@ -546,13 +690,14 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
                 <div className="relative">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs font-medium text-gray-500">Description</span>
-                    <button 
-                      onClick={() => handleGenerateProjectDesc(index)} 
+                    <button
+                      onClick={() => handleGenerateProjectDesc(index)}
                       disabled={generatingProjectIndex === index}
                       className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                      title={aiEnabled ? undefined : `Paid feature — contact ${SALES_EMAIL}`}
                     >
                       {generatingProjectIndex === index ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                      Generate with AI
+                      Generate with AI{!aiEnabled && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600 font-semibold">PAID</span>}
                     </button>
                   </div>
                   <textarea value={proj.description} onChange={(e) => handleArrayChange('projects', index, 'description', e.target.value)} placeholder="Description" rows={3} className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-white" />
@@ -563,9 +708,9 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
                   value={(proj.technologies || []).join(', ')} 
                   onChange={(e) => {
                     const newArray = [...data.projects];
-                    newArray[index] = { ...newArray[index], technologies: e.target.value.split(',').map(t => t.trim()) };
+                    newArray[index] = { ...newArray[index], technologies: splitCsv(e.target.value) };
                     onChange({ ...data, projects: newArray });
-                  }} 
+                  }}
                   placeholder="Technologies (comma separated)" 
                   className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" 
                 />
@@ -670,11 +815,21 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
 
       {/* ATS Optimization Section */}
       <section className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
-        <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
-          <Sparkles size={18} />
-          <h3>ATS Optimization</h3>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 text-emerald-800 font-semibold">
+            <Sparkles size={18} />
+            <h3>ATS Optimization</h3>
+          </div>
+          <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${aiEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {aiEnabled ? 'AI enabled' : 'Paid feature'}
+          </span>
         </div>
         <p className="text-xs text-emerald-600 mb-3">Tailor your resume to a specific job description to improve your ATS match score.</p>
+        {!aiEnabled && (
+          <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mb-3 leading-relaxed">
+            ATS scoring &amp; tailoring uses AI and requires an active plan. Email <a href={`mailto:${SALES_EMAIL}`} className="underline font-semibold">{SALES_EMAIL}</a> to unlock.
+          </p>
+        )}
 
         {data.atsScore !== undefined && (
           <div className="mb-4 bg-white p-3 rounded border border-emerald-200 flex items-center justify-between">
@@ -709,11 +864,12 @@ export default function Sidebar({ data, onChange, template }: SidebarProps) {
           </div>
           <button
             onClick={handleTailorResume}
-            disabled={isTailoring || !data.targetJob?.description}
+            disabled={isTailoring || !data.targetJob?.description || !aiEnabled}
             className="w-full bg-emerald-600 text-white px-3 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            title={aiEnabled ? undefined : `Paid feature — contact ${SALES_EMAIL}`}
           >
             {isTailoring ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            <span className="text-sm font-medium">{isTailoring ? 'Tailoring Resume...' : 'Tailor Resume & Get Score'}</span>
+            <span className="text-sm font-medium">{isTailoring ? 'Tailoring Resume...' : aiEnabled ? 'Tailor Resume & Get Score' : 'Tailor Resume (Paid)'}</span>
           </button>
         </div>
       </section>

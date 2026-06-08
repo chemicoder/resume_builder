@@ -2,13 +2,14 @@ import React from 'react';
 import { ResumeData } from '../../types';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 export default function MinimalResume({ data }: { data: ResumeData }) {
   const primaryColor = data.theme?.primary || '#2563eb';
   const accentColor = data.theme?.accent || '#3b82f6';
 
   return (
-    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-10 shadow-lg min-h-[1056px] text-gray-800 font-sans">
+    <div data-resume-page className="w-full max-w-[800px] mx-auto bg-white p-10 shadow-lg min-h-[1056px] text-gray-800 font-sans" style={{ color: data.theme?.bodyText || undefined, fontFamily: cssFontStack(data.theme?.fontFamily) || undefined }}>
       {/* Header */}
       <header className="border-b-2 pb-6 mb-6 flex justify-between items-start" style={{ borderColor: primaryColor }}>
         <div>

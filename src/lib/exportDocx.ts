@@ -20,6 +20,7 @@ import {
 import { saveAs } from 'file-saver';
 import { ResumeData } from '../types';
 import { getResumeFileBaseName } from './fileNames';
+import { docxFontName } from './fonts';
 
 type DocxTemplate =
   | 'minimal'
@@ -40,7 +41,10 @@ type DocxTemplate =
   | 'architect'
   | 'consultant'
   | 'magazine'
-  | 'neoclassic';
+  | 'neoclassic'
+  | 'pastel'
+  | 'slate'
+  | 'midnight';
 type DocxNode = Paragraph | Table;
 
 interface PaletteColors {
@@ -1689,34 +1693,118 @@ function expressiveSideDetails(data: ResumeData, primary: string, accent: string
   return nodes;
 }
 
+// Per-template section labels — same data, different vocabulary so each
+// downloaded Word file feels like the template the user picked, not just a
+// generic "Experience / Projects" sheet.
+interface SectionLabels {
+  summary: string;
+  experience: string;
+  projects: string;
+  details: string;
+  references: string;
+}
+function labelsForTemplate(template: DocxTemplate): SectionLabels {
+  switch (template) {
+    case 'editorial': return { summary: 'Editor’s Note', experience: 'Career', projects: 'Featured Work', details: 'Credentials', references: 'References' };
+    case 'luxe': return { summary: 'Profile', experience: 'Experience', projects: 'Signature Projects', details: 'Distinctions', references: 'References' };
+    case 'spectrum': return { summary: 'Overview', experience: 'Experience', projects: 'Projects', details: 'Skills & Studies', references: 'References' };
+    case 'timeline': return { summary: 'Profile', experience: 'Career Timeline', projects: 'Projects', details: 'Skills & Studies', references: 'References' };
+    case 'compact': return { summary: 'Profile', experience: 'Experience', projects: 'Projects', details: 'Skills', references: 'References' };
+    case 'executive': return { summary: 'Executive Summary', experience: 'Leadership Experience', projects: 'Strategic Work', details: 'Credentials', references: 'References' };
+    case 'atelier': return { summary: 'Statement', experience: 'Practice', projects: 'Selected Studio Work', details: 'Studies & Skills', references: 'References' };
+    case 'architect': return { summary: 'Design Statement', experience: 'Practice', projects: 'Built Work', details: 'Studies & Skills', references: 'References' };
+    case 'consultant': return { summary: 'Summary', experience: 'Engagements', projects: 'Case Work', details: 'Credentials', references: 'References' };
+    case 'magazine': return { summary: 'Lede', experience: 'Feature', projects: 'Portfolio', details: 'Vitals', references: 'References' };
+    case 'neoclassic': return { summary: 'Profile', experience: 'Experience', projects: 'Selected Work', details: 'Credentials', references: 'References' };
+    case 'pastel': return { summary: 'About', experience: 'Experience', projects: 'Work', details: 'Skills & Studies', references: 'References' };
+    case 'slate': return { summary: 'Executive Summary', experience: 'Experience', projects: 'Projects', details: 'Credentials', references: 'References' };
+    case 'midnight': return { summary: 'Profile', experience: 'Experience', projects: 'Projects', details: 'Skills', references: 'References' };
+    default: return { summary: 'Summary', experience: 'Experience', projects: 'Projects', details: 'Skills', references: 'References' };
+  }
+}
+
+interface ExpressiveTheme {
+  primary: string;
+  accent: string;
+  font: string;
+  // Body text color: usually 1F2937 on light pages, E2E8F0 on dark pages.
+  bodyColor: string;
+  // Page text color for subtitles (job title etc.) on banner header.
+  bannerSubtitle: string;
+  bannerContact: string;
+  // Background fill for sidebar panels (light vs dark templates).
+  sidebarFill: string;
+  sidebarBorder: string;
+  sidebarLabelColor: string;
+  // Whether the template uses a dark page background (luxe, midnight).
+  isDark: boolean;
+}
+function themeForTemplate(template: DocxTemplate, palette: PaletteColors, bodyOverride?: string): ExpressiveTheme {
+  const isDark = template === 'luxe' || template === 'midnight';
+  const defaultBody = isDark ? 'E2E8F0' : '1F2937';
+  return {
+    primary: palette.primary,
+    accent: palette.accent,
+    font: palette.font,
+    bodyColor: bodyOverride ? hex(bodyOverride, defaultBody) : defaultBody,
+    bannerSubtitle: isDark ? 'F1F5F9' : 'DBEAFE',
+    bannerContact: isDark ? 'CBD5E1' : 'E0F2FE',
+    sidebarFill: isDark ? '0F172A' : 'F8FAFC',
+    sidebarBorder: isDark ? '334155' : 'CBD5E1',
+    sidebarLabelColor: isDark ? 'E2E8F0' : '1F2937',
+    isDark,
+  };
+}
+
 function buildExpressiveClassic(ctx: BuildContext): DocxNode[] {
   const { data, palette } = ctx;
   const { primary, accent, font } = palette;
+  const theme = themeForTemplate(ctx.template, palette, data.theme?.bodyText);
+  const labels = labelsForTemplate(ctx.template);
+
+  // Editorial / Atelier / Neoclassic share this base but with slight tweaks:
+  // editorial gets a big name + italic title, atelier slants more, neoclassic
+  // uses small caps. We vary the title size to give a different fingerprint.
+  const nameSize = ctx.template === 'editorial' ? 52 : ctx.template === 'atelier' ? 46 : 44;
+  const titleItalic = ctx.template !== 'neoclassic';
+
   const nodes: DocxNode[] = [
-    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 44, font, allCaps: true })], { after: 60 }),
-    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 24, font, italics: true })], { after: 110 }),
-    paragraph([run(contactItems(data).join('   |   '), { color: '4B5563', size: 17, font })], { after: 160 }),
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: nameSize, font, allCaps: ctx.template === 'neoclassic' })], { after: 60 }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 24, font, italics: titleItalic })], { after: 110 }),
+    paragraph([run(contactItems(data).join('   |   '), { color: theme.bodyColor === '1F2937' ? '4B5563' : theme.bodyColor, size: 17, font })], { after: 160, border: ctx.template === 'editorial' ? { bottom: { color: accent, size: 6 } } : undefined }),
   ];
 
   if (data.personalInfo.summary) {
-    nodes.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 21, font })], { after: 220, border: { left: { color: accent, size: 12 } }, indent: { left: 180 } }));
+    // Editorial: drop-cap effect with leading large run; Neoclassic: justified
+    // serif paragraph; Atelier: italic accent border.
+    if (ctx.template === 'editorial') {
+      const summary = data.personalInfo.summary;
+      const firstChar = summary.charAt(0);
+      const rest = summary.slice(1);
+      nodes.push(paragraph([
+        run(firstChar, { bold: true, color: primary, size: 56, font }),
+        run(rest, { color: theme.bodyColor, size: 21, font }),
+      ], { after: 220 }));
+    } else {
+      nodes.push(paragraph([run(data.personalInfo.summary, { color: theme.bodyColor, size: 21, font })], { after: 220, border: { left: { color: accent, size: 12 } }, indent: { left: 180 } }));
+    }
   }
   if (data.experience.length) {
-    nodes.push(expressiveHeading('Experience', primary, font));
-    expressiveExperience(data, primary, accent, font).forEach((item) => nodes.push(item));
+    nodes.push(expressiveHeading(labels.experience, primary, font));
+    expressiveExperience(data, primary, accent, font, theme.bodyColor).forEach((item) => nodes.push(item));
   }
   if (data.projects.length) {
-    nodes.push(expressiveHeading('Selected Work', primary, font));
+    nodes.push(expressiveHeading(labels.projects, primary, font));
     expressiveProjects(data, primary, accent, font).forEach((item) => nodes.push(item));
   }
 
   const details = expressiveSideDetails(data, primary, accent, font);
   if (details.length) {
-    nodes.push(expressiveHeading('Credentials', primary, font));
+    nodes.push(expressiveHeading(labels.details, primary, font));
     details.forEach((item) => nodes.push(item));
   }
   if (data.references !== undefined) {
-    nodes.push(expressiveHeading('References', primary, font));
+    nodes.push(expressiveHeading(labels.references, primary, font));
     referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => nodes.push(item));
   }
 
@@ -1726,28 +1814,84 @@ function buildExpressiveClassic(ctx: BuildContext): DocxNode[] {
 function buildExpressiveSidebar(ctx: BuildContext): DocxNode[] {
   const { data, palette } = ctx;
   const { primary, accent, font } = palette;
-  const side: DocxNode[] = [
-    paragraph([run(contactItems(data).join('\n'), { color: '4B5563', size: 16, font })], { after: 180 }),
-    ...expressiveSideDetails(data, primary, accent, font),
-  ];
+  const theme = themeForTemplate(ctx.template, palette, data.theme?.bodyText);
+  const labels = labelsForTemplate(ctx.template);
+
+  // Visual fingerprint per template within the sidebar family:
+  //  - executive/slate: dark left panel with light text (premium feel)
+  //  - timeline: keep the light sidebar, but main column uses a dot-and-line
+  //    "career timeline" experience layout (see buildTimelineExperience)
+  //  - architect: light sidebar, but main uses a fully bordered frame
+  const useDarkSidebar = ctx.template === 'executive' || ctx.template === 'slate';
+  const sidebarFill = useDarkSidebar ? primary : theme.sidebarFill;
+  const sidebarTextColor = useDarkSidebar ? 'FFFFFF' : theme.bodyColor;
+  const sidebarMutedColor = useDarkSidebar ? 'CBD5E1' : '6B7280';
+
+  const sidebarHead = (label: string): Paragraph => paragraph(
+    [run(label, { bold: true, color: useDarkSidebar ? 'FFFFFF' : accent, size: 20, font, allCaps: true })],
+    { after: 100, before: 100, border: { bottom: { color: useDarkSidebar ? 'FFFFFF' : accent, size: 6 } }, keepNext: true },
+  );
+
+  const side: DocxNode[] = [];
+  // Contact lines as labeled items, color-aware for dark sidebars.
+  contactItems(data).forEach((item) => {
+    side.push(paragraph([run(item, { color: sidebarTextColor, size: 17, font })], { after: 50 }));
+  });
+  side.push(spacer(180));
+  if (data.skills.length) {
+    side.push(sidebarHead('Skills'));
+    const grid = pillGrid(data.skills, {
+      textColor: useDarkSidebar ? 'F8FAFC' : primary,
+      fillColor: useDarkSidebar ? '1F2937' : 'FFFFFF',
+      borderColor: useDarkSidebar ? '475569' : 'CBD5E1',
+      font,
+      size: 16,
+      columns: 2,
+    });
+    if (grid) side.push(grid);
+    side.push(spacer(160));
+  }
+  if (data.education.length) {
+    side.push(sidebarHead('Education'));
+    data.education.forEach((edu, idx) => {
+      side.push(paragraph([run(edu.degree, { bold: true, color: sidebarTextColor, size: 18, font })], { after: 30 }));
+      side.push(paragraph([run(edu.institution, { color: sidebarMutedColor, size: 17, font })], { after: 30 }));
+      side.push(paragraph([run([edu.startDate, edu.endDate].filter(Boolean).join(' - '), { color: sidebarMutedColor, size: 15, font })], { after: idx < data.education.length - 1 ? 130 : 80 }));
+    });
+    side.push(spacer(140));
+  }
+  if ((data.languages || []).length) {
+    side.push(sidebarHead('Languages'));
+    (data.languages || []).forEach((lang) => {
+      side.push(paragraph([
+        run(lang.name, { bold: true, color: sidebarTextColor, size: 17, font }),
+        run(`   ${lang.level}`, { color: sidebarMutedColor, size: 15, font }),
+      ], { after: 60 }));
+    });
+  }
+
   const main: DocxNode[] = [
-    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 42, font })], { after: 60 }),
-    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 23, font })], { after: 140 }),
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: ctx.template === 'slate' ? 40 : 42, font })], { after: 60 }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 23, font, italics: ctx.template === 'timeline' })], { after: 140 }),
   ];
   if (data.personalInfo.summary) {
-    main.push(expressiveHeading('Profile', accent, font));
-    main.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 19, font })], { after: 180 }));
+    main.push(expressiveHeading(labels.summary, accent, font));
+    main.push(paragraph([run(data.personalInfo.summary, { color: theme.bodyColor, size: 19, font })], { after: 180 }));
   }
   if (data.experience.length) {
-    main.push(expressiveHeading('Experience', primary, font));
-    expressiveExperience(data, primary, accent, font).forEach((item) => main.push(item));
+    main.push(expressiveHeading(labels.experience, primary, font));
+    if (ctx.template === 'timeline') {
+      buildTimelineExperience(data, primary, accent, font, theme.bodyColor).forEach((item) => main.push(item));
+    } else {
+      expressiveExperience(data, primary, accent, font, theme.bodyColor).forEach((item) => main.push(item));
+    }
   }
   if (data.projects.length) {
-    main.push(expressiveHeading('Projects', primary, font));
+    main.push(expressiveHeading(labels.projects, primary, font));
     expressiveProjects(data, primary, accent, font).forEach((item) => main.push(item));
   }
   if (data.references !== undefined) {
-    main.push(expressiveHeading('References', primary, font));
+    main.push(expressiveHeading(labels.references, primary, font));
     referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => main.push(item));
   }
 
@@ -1755,7 +1899,7 @@ function buildExpressiveSidebar(ctx: BuildContext): DocxNode[] {
     fullTable([
       new TableRow({
         children: [
-          tableCell(side, { width: 32, fill: 'F8FAFC', margins: { top: 420, bottom: 420, left: 360, right: 300 }, borders: { right: 'CBD5E1' } }),
+          tableCell(side, { width: 32, fill: sidebarFill, margins: { top: 420, bottom: 420, left: 360, right: 300 }, borders: useDarkSidebar ? undefined : { right: theme.sidebarBorder } }),
           tableCell(main, { width: 68, margins: { top: 420, bottom: 420, left: 420, right: 0 } }),
         ],
       }),
@@ -1763,30 +1907,64 @@ function buildExpressiveSidebar(ctx: BuildContext): DocxNode[] {
   ];
 }
 
+// Dot-and-line "career timeline" layout used by the Timeline template's main
+// column, keeping it visually distinct from the standard role/date list.
+function buildTimelineExperience(data: ResumeData, primary: string, accent: string, font: string, bodyColor: string): DocxNode[] {
+  const nodes: DocxNode[] = [];
+  data.experience.forEach((exp, idx) => {
+    nodes.push(fullTable([
+      new TableRow({
+        children: [
+          tableCell([
+            paragraph([run([exp.startDate, exp.endDate].filter(Boolean).join('\n'), { color: accent, size: 16, font, bold: true })], { after: 30 }),
+          ], { width: 18, margins: { top: 0, bottom: 0, left: 0, right: 0 } }),
+          tableCell([
+            paragraph([run(exp.role, { bold: true, color: primary, size: 22, font })], { after: 30 }),
+            paragraph([run(exp.company, { bold: true, color: bodyColor, size: 18, font })], { after: 80 }),
+            ...bulletList(splitLines(exp.description), { color: bodyColor, size: 18, font, indent: 240 }),
+          ], { width: 82, margins: { top: 0, bottom: 0, left: 200, right: 0 }, borders: { left: primary } }),
+        ],
+      }),
+    ]));
+    if (idx < data.experience.length - 1) nodes.push(spacer(160));
+  });
+  return nodes;
+}
+
 function buildExpressiveBanner(ctx: BuildContext): DocxNode[] {
   const { data, palette } = ctx;
   const { primary, accent, font } = palette;
+  const theme = themeForTemplate(ctx.template, palette, data.theme?.bodyText);
+  const labels = labelsForTemplate(ctx.template);
+
+  // Visual fingerprint:
+  //  - luxe/midnight: dark page; banner uses solid primary; body uses dark fill
+  //  - pastel: soft banner with primary-on-white and accent border under
+  //  - spectrum/consultant: full-color banner, white text
+  const bodyFill = theme.isDark ? '0B1120' : undefined;
+  const summaryColor = theme.bodyColor;
+
   const body: DocxNode[] = [];
   if (data.personalInfo.summary) {
-    body.push(expressiveHeading('Summary', accent, font));
-    body.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 19, font })], { after: 180 }));
+    body.push(expressiveHeading(labels.summary, accent, font));
+    body.push(paragraph([run(data.personalInfo.summary, { color: summaryColor, size: 19, font })], { after: 180 }));
   }
   if (data.experience.length) {
-    body.push(expressiveHeading('Experience', accent, font));
-    expressiveExperience(data, primary, accent, font).forEach((item) => body.push(item));
+    body.push(expressiveHeading(labels.experience, accent, font));
+    expressiveExperience(data, primary, accent, font, summaryColor).forEach((item) => body.push(item));
   }
   if (data.projects.length) {
-    body.push(expressiveHeading('Case Work', accent, font));
+    body.push(expressiveHeading(labels.projects, accent, font));
     expressiveProjects(data, primary, accent, font).forEach((item) => body.push(item));
   }
   const details = expressiveSideDetails(data, primary, accent, font);
   if (details.length) {
-    body.push(expressiveHeading('Credentials', accent, font));
+    body.push(expressiveHeading(labels.details, accent, font));
     details.forEach((item) => body.push(item));
   }
   if (data.references !== undefined) {
-    body.push(expressiveHeading('References', accent, font));
-    referenceList(data, { primary, accent, font, size: 18 }).forEach((item) => body.push(item));
+    body.push(expressiveHeading(labels.references, accent, font));
+    referenceList(data, { primary, accent, font, size: 18, bodyColor: summaryColor }).forEach((item) => body.push(item));
   }
 
   return [
@@ -1795,14 +1973,14 @@ function buildExpressiveBanner(ctx: BuildContext): DocxNode[] {
         children: [
           tableCell([
             paragraph([run(data.personalInfo.fullName || '', { bold: true, color: 'FFFFFF', size: 42, font })], { after: 70 }),
-            paragraph([run(data.personalInfo.jobTitle || '', { color: 'DBEAFE', size: 23, font })], { after: 120 }),
-            paragraph([run(contactItems(data).join('   |   '), { color: 'E0F2FE', size: 16, font })], { after: 0 }),
+            paragraph([run(data.personalInfo.jobTitle || '', { color: theme.bannerSubtitle, size: 23, font })], { after: 120 }),
+            paragraph([run(contactItems(data).join('   |   '), { color: theme.bannerContact, size: 16, font })], { after: 0 }),
           ], { width: 100, fill: primary, margins: { top: 520, bottom: 520, left: 520, right: 520 } }),
         ],
       }),
       new TableRow({
         children: [
-          tableCell(body, { width: 100, margins: { top: 420, bottom: 420, left: 520, right: 520 } }),
+          tableCell(body, { width: 100, fill: bodyFill, margins: { top: 420, bottom: 420, left: 520, right: 520 } }),
         ],
       }),
     ]),
@@ -1812,28 +1990,39 @@ function buildExpressiveBanner(ctx: BuildContext): DocxNode[] {
 function buildExpressiveCompact(ctx: BuildContext): DocxNode[] {
   const { data, palette } = ctx;
   const { primary, accent, font } = palette;
+  const theme = themeForTemplate(ctx.template, palette, data.theme?.bodyText);
+  const labels = labelsForTemplate(ctx.template);
+
+  // Magazine variant: much larger headline, accent rule under the title,
+  // small-caps section heads — distinct from the compact mono look.
+  const isMagazine = ctx.template === 'magazine';
+  const nameSize = isMagazine ? 56 : 36;
+
   const nodes: DocxNode[] = [
-    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: 36, font, allCaps: true })], { after: 40, border: { top: { color: primary, size: 10 } } }),
-    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: 20, font })], { after: 70 }),
-    paragraph([run(contactItems(data).join(' | '), { color: '4B5563', size: 15, font })], { after: 140, border: { bottom: { color: primary, size: 6 } } }),
+    paragraph([run(data.personalInfo.fullName || '', { bold: true, color: primary, size: nameSize, font, allCaps: !isMagazine })], { after: isMagazine ? 60 : 40, border: isMagazine ? undefined : { top: { color: primary, size: 10 } } }),
+    paragraph([run(data.personalInfo.jobTitle || '', { color: accent, size: isMagazine ? 26 : 20, font, italics: isMagazine })], { after: 70, border: isMagazine ? { bottom: { color: accent, size: 18 } } : undefined }),
+    paragraph([run(contactItems(data).join(' | '), { color: theme.bodyColor === '1F2937' ? '4B5563' : theme.bodyColor, size: 15, font })], { after: 140, border: isMagazine ? undefined : { bottom: { color: primary, size: 6 } } }),
   ];
   if (data.personalInfo.summary) {
-    nodes.push(expressiveHeading('Profile', accent, font));
-    nodes.push(paragraph([run(data.personalInfo.summary, { color: '1F2937', size: 17, font })], { after: 150 }));
+    nodes.push(expressiveHeading(labels.summary, accent, font));
+    nodes.push(paragraph([run(data.personalInfo.summary, { color: theme.bodyColor, size: isMagazine ? 19 : 17, font, italics: isMagazine })], { after: 150 }));
   }
   if (data.experience.length) {
-    nodes.push(expressiveHeading('Experience', accent, font));
-    expressiveExperience(data, primary, accent, font, '1F2937').forEach((item) => nodes.push(item));
+    nodes.push(expressiveHeading(labels.experience, accent, font));
+    expressiveExperience(data, primary, accent, font, theme.bodyColor).forEach((item) => nodes.push(item));
   }
   if (data.projects.length) {
-    nodes.push(expressiveHeading('Projects', accent, font));
+    nodes.push(expressiveHeading(labels.projects, accent, font));
     expressiveProjects(data, primary, accent, font).forEach((item) => nodes.push(item));
   }
   const details = expressiveSideDetails(data, primary, accent, font);
-  details.forEach((item) => nodes.push(item));
+  if (details.length) {
+    nodes.push(expressiveHeading(labels.details, accent, font));
+    details.forEach((item) => nodes.push(item));
+  }
   if (data.references !== undefined) {
-    nodes.push(expressiveHeading('References', accent, font));
-    referenceList(data, { primary, accent, font, size: 17 }).forEach((item) => nodes.push(item));
+    nodes.push(expressiveHeading(labels.references, accent, font));
+    referenceList(data, { primary, accent, font, size: 17, bodyColor: theme.bodyColor }).forEach((item) => nodes.push(item));
   }
   return nodes;
 }
@@ -1843,10 +2032,13 @@ function buildExpressive(ctx: BuildContext): DocxNode[] {
     case 'consultant':
     case 'spectrum':
     case 'luxe':
+    case 'pastel':
+    case 'midnight':
       return buildExpressiveBanner(ctx);
     case 'executive':
     case 'architect':
     case 'timeline':
+    case 'slate':
       return buildExpressiveSidebar(ctx);
     case 'compact':
     case 'magazine':
@@ -1882,6 +2074,9 @@ function buildDocument(ctx: BuildContext): DocxNode[] {
     case 'consultant':
     case 'magazine':
     case 'neoclassic':
+    case 'pastel':
+    case 'slate':
+    case 'midnight':
       return buildExpressive(ctx);
     case 'minimal':
     default: return buildMinimal(ctx);
@@ -1909,6 +2104,9 @@ function paletteForTemplate(data: ResumeData, template: DocxTemplate): PaletteCo
     consultant: 'Aptos',
     magazine: 'Arial',
     neoclassic: 'Garamond',
+    pastel: 'Aptos',
+    slate: 'Aptos',
+    midnight: 'Aptos',
   };
   const defaults: Record<DocxTemplate, { primary: string; accent: string }> = {
     minimal: { primary: '2563EB', accent: '3B82F6' },
@@ -1930,13 +2128,20 @@ function paletteForTemplate(data: ResumeData, template: DocxTemplate): PaletteCo
     consultant: { primary: '1D4ED8', accent: '0F766E' },
     magazine: { primary: '111827', accent: 'E11D48' },
     neoclassic: { primary: '7F1D1D', accent: '1E3A8A' },
+    pastel: { primary: 'A855F7', accent: 'F472B6' },
+    slate: { primary: '0F172A', accent: '0EA5E9' },
+    midnight: { primary: '22D3EE', accent: 'A78BFA' },
   };
   const d = defaults[template];
+  // Harvard is intentionally locked to Times New Roman; the user's font
+  // override applies to every other template.
+  const userFont = template === 'harvard' ? undefined : docxFontName(data.theme?.fontFamily);
+  const font = userFont || fontByTemplate[template];
   return {
     primary: hex(data.theme?.primary, d.primary),
     accent: hex(data.theme?.accent, d.accent),
-    font: fontByTemplate[template],
-    bodyFont: fontByTemplate[template],
+    font,
+    bodyFont: font,
   };
 }
 
@@ -1983,6 +2188,9 @@ function documentBackgroundForTemplate(template: DocxTemplate): string {
     case 'architect': return 'F9FAFB';   // blueprint paper
     case 'magazine': return 'FCFCFC';    // editorial white
     case 'neoclassic': return 'FFFEFA';  // ivory
+    case 'pastel': return 'FDF6F9';      // soft rose paper
+    case 'slate': return 'F1F5F9';       // light slate paper
+    case 'midnight': return '0B1120';    // deep navy
     case 'europass':
     case 'harvard':
     case 'engineersaustralia':
@@ -1999,8 +2207,13 @@ export async function exportResumeDocx(data: ResumeData, template: DocxTemplate)
   const ctx: BuildContext = { data, template, palette };
   const margin = pageMarginsForTemplate(template);
 
-  const isDark = template === 'developer' || template === 'luxe';
-  const defaultColor = isDark ? 'E2E8F0' : '1F2937';
+  const isDark = template === 'developer' || template === 'luxe' || template === 'midnight';
+  // Respect the user's optional body-text override; fall back to a sensible
+  // default based on whether the template uses a dark background.
+  const userBodyText = data.theme?.bodyText;
+  const defaultColor = userBodyText
+    ? hex(userBodyText, isDark ? 'E2E8F0' : '1F2937')
+    : (isDark ? 'E2E8F0' : '1F2937');
   const pageBackground = documentBackgroundForTemplate(template);
 
   const document = new Document({

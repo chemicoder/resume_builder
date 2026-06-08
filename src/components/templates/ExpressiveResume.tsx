@@ -2,6 +2,7 @@ import React from 'react';
 import { ResumeData } from '../../types';
 import { Mail, Phone, MapPin, Globe, Linkedin, Github, Sparkles, Briefcase, GraduationCap, Code2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { cssFontStack } from '../../lib/fonts';
 
 type ExpressiveVariant =
   | 'editorial'
@@ -14,7 +15,10 @@ type ExpressiveVariant =
   | 'architect'
   | 'consultant'
   | 'magazine'
-  | 'neoclassic';
+  | 'neoclassic'
+  | 'pastel'
+  | 'slate'
+  | 'midnight';
 
 interface ExpressiveResumeProps {
   data: ResumeData;
@@ -116,6 +120,30 @@ const variantConfig: Record<ExpressiveVariant, {
     primary: '#7f1d1d',
     accent: '#1e3a8a',
     muted: '#57534e',
+  },
+  pastel: {
+    name: 'Pastel',
+    pageClass: 'bg-[#fdf6f9] text-[#2b1d2d]',
+    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+    primary: '#a855f7',
+    accent: '#f472b6',
+    muted: '#6b7280',
+  },
+  slate: {
+    name: 'Slate Pro',
+    pageClass: 'bg-[#f1f5f9] text-[#0f172a]',
+    fontFamily: '"Segoe UI", Inter, Arial, sans-serif',
+    primary: '#0f172a',
+    accent: '#0ea5e9',
+    muted: '#475569',
+  },
+  midnight: {
+    name: 'Midnight',
+    pageClass: 'bg-[#0b1120] text-[#e2e8f0]',
+    fontFamily: '"Segoe UI", Inter, Arial, sans-serif',
+    primary: '#22d3ee',
+    accent: '#a78bfa',
+    muted: '#94a3b8',
   },
 };
 
@@ -280,7 +308,7 @@ function References({ data, color }: { data: ResumeData; color: string }) {
 
 function EditorialResume({ data, config }: { data: ResumeData; config: typeof variantConfig.editorial }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-12 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-12 ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="grid grid-cols-[1fr_180px] gap-8 border-b pb-8 mb-8" style={{ borderColor: `${config.primary}55` }}>
         <div>
           <h1 className="text-6xl leading-none font-black mb-4">{data.personalInfo.fullName}</h1>
@@ -316,7 +344,7 @@ function EditorialResume({ data, config }: { data: ResumeData; config: typeof va
 
 function LuxeResume({ data, config }: { data: ResumeData; config: typeof variantConfig.luxe }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-2xl min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-2xl min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <div className="p-10 border-[14px] min-h-[1131px]" style={{ borderColor: config.primary }}>
         <header className="flex justify-between gap-8 mb-10">
           <div>
@@ -349,7 +377,7 @@ function LuxeResume({ data, config }: { data: ResumeData; config: typeof variant
 
 function SpectrumResume({ data, config }: { data: ResumeData; config: typeof variantConfig.spectrum }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] overflow-hidden ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] overflow-hidden ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="grid grid-cols-[290px_1fr] min-h-[280px]">
         <div className="p-10 text-white flex flex-col justify-between" style={{ background: `linear-gradient(135deg, ${config.primary}, ${config.accent})` }}>
           <div />
@@ -384,7 +412,7 @@ function SpectrumResume({ data, config }: { data: ResumeData; config: typeof var
 
 function TimelineResume({ data, config }: { data: ResumeData; config: typeof variantConfig.timeline }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-10 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-10 ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="flex justify-between gap-8 mb-9">
         <div>
           <h1 className="text-5xl font-black uppercase leading-none mb-3">{data.personalInfo.fullName}</h1>
@@ -431,7 +459,7 @@ function TimelineResume({ data, config }: { data: ResumeData; config: typeof var
 
 function CompactResume({ data, config }: { data: ResumeData; config: typeof variantConfig.compact }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-8 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-8 ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="border-2 p-5 mb-6" style={{ borderColor: config.primary }}>
         <div className="flex justify-between gap-6">
           <div>
@@ -460,7 +488,7 @@ function CompactResume({ data, config }: { data: ResumeData; config: typeof vari
 
 function ExecutiveResume({ data, config }: { data: ResumeData; config: typeof variantConfig.executive }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="px-12 pt-12 pb-8 border-b-[6px]" style={{ borderColor: config.accent }}>
         <div className="flex justify-between gap-8">
           <div>
@@ -496,7 +524,7 @@ function ExecutiveResume({ data, config }: { data: ResumeData; config: typeof va
 
 function ArchitectResume({ data, config }: { data: ResumeData; config: typeof variantConfig.architect }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-10 ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-lg min-h-[1131px] p-10 ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <div className="border-2 min-h-[1051px]" style={{ borderColor: config.primary }}>
         <header className="grid grid-cols-[1fr_230px] border-b-2" style={{ borderColor: config.primary }}>
           <div className="p-8">
@@ -527,7 +555,7 @@ function ArchitectResume({ data, config }: { data: ResumeData; config: typeof va
 
 function ConsultantResume({ data, config }: { data: ResumeData; config: typeof variantConfig.consultant }) {
   return (
-    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: config.fontFamily }}>
+    <div data-resume-page className={`w-full max-w-[800px] mx-auto shadow-xl min-h-[1131px] ${config.pageClass}`} style={{ fontFamily: cssFontStack(data.theme?.fontFamily) || config.fontFamily, color: data.theme?.bodyText || undefined }}>
       <header className="p-12 text-white" style={{ backgroundColor: config.primary }}>
         <div className="grid grid-cols-[1fr_230px] gap-8 items-start">
           <div>
@@ -568,7 +596,18 @@ function ConsultantResume({ data, config }: { data: ResumeData; config: typeof v
 }
 
 export default function ExpressiveResume({ data, variant }: ExpressiveResumeProps) {
-  const config = variantConfig[variant];
+  // Respect user theme overrides — variantConfig provides defaults, but the
+  // color pickers in the sidebar should still drive the heading/accent colors
+  // for every variant. The dark-page variants (luxe) intentionally keep their
+  // own background/text palette; the user only changes accent inks.
+  const base = variantConfig[variant];
+  const isDefaultPrimary = !data.theme?.primary || data.theme.primary.toLowerCase() === '#2563eb';
+  const isDefaultAccent = !data.theme?.accent || data.theme.accent.toLowerCase() === '#3b82f6';
+  const config = {
+    ...base,
+    primary: isDefaultPrimary ? base.primary : data.theme.primary,
+    accent: isDefaultAccent ? base.accent : data.theme.accent,
+  };
 
   switch (variant) {
     case 'editorial':
@@ -576,12 +615,15 @@ export default function ExpressiveResume({ data, variant }: ExpressiveResumeProp
     case 'neoclassic':
       return <EditorialResume data={data} config={config} />;
     case 'luxe':
+    case 'midnight':
       return <LuxeResume data={data} config={config} />;
     case 'spectrum':
+    case 'pastel':
       return <SpectrumResume data={data} config={config} />;
     case 'timeline':
       return <TimelineResume data={data} config={config} />;
     case 'executive':
+    case 'slate':
       return <ExecutiveResume data={data} config={config} />;
     case 'architect':
       return <ArchitectResume data={data} config={config} />;
