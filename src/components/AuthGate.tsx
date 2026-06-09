@@ -4,7 +4,32 @@ import { authRedirectUrl, enableAnonymousAuth, isAuthConfigured, supabase } from
 
 type AuthMode = 'password' | 'magic-link' | 'reset';
 
-export default function AuthGate() {
+interface AuthGateProps {
+  onContinueAsGuest: () => void;
+}
+
+async function createConfirmedAccount(email: string, password: string) {
+  const response = await fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  let body: any = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(body?.error || 'Could not create the account. Please try again.');
+  }
+
+  return body as { created: boolean };
+}
+
+export default function AuthGate({ onContinueAsGuest }: AuthGateProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<AuthMode>('password');
@@ -52,33 +77,40 @@ export default function AuthGate() {
     setError('');
 
     if (!ensureAuthConfigured()) return;
+    const normalizedEmail = email.trim().toLowerCase();
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
 
     setIsSending(true);
-    const response = isCreatingAccount
-      ? await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: authRedirectUrl,
-          },
-        })
-      : await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+    let response;
+
+    if (isCreatingAccount) {
+      try {
+        await createConfirmedAccount(normalizedEmail, password);
+      } catch (error) {
+        setIsSending(false);
+        setError(error instanceof Error ? error.message : 'Could not create the account. Please try again.');
+        return;
+      }
+    }
+
+    response = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
     setIsSending(false);
 
     if (response.error) {
-      setError(response.error.message);
+      if (isCreatingAccount) {
+        setError('The account was created, but this password did not sign in. Try signing in again or continue without email.');
+      } else if (/invalid login credentials/i.test(response.error.message)) {
+        setError('Email or password did not match. Create an account if this is your first time, or continue without email.');
+      } else {
+        setError(response.error.message);
+      }
       return;
-    }
-
-    if (isCreatingAccount && !response.data.session) {
-      setSentTo(email);
     }
   };
 
@@ -110,14 +142,22 @@ export default function AuthGate() {
   const handleAnonymousSignIn = async () => {
     setError('');
 
-    if (!ensureAuthConfigured()) return;
+    if (!enableAnonymousAuth) {
+      onContinueAsGuest();
+      return;
+    }
+
+    if (!ensureAuthConfigured()) {
+      onContinueAsGuest();
+      return;
+    }
 
     setIsSending(true);
     const { error: signInError } = await supabase.auth.signInAnonymously();
     setIsSending(false);
 
     if (signInError) {
-      setError(`${signInError.message}. Enable anonymous sign-ins in Supabase Auth, or use password login.`);
+      onContinueAsGuest();
     }
   };
 
@@ -198,6 +238,11 @@ export default function AuthGate() {
 
             {mode === 'password' ? (
               <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  {isCreatingAccount
+                    ? 'Create an account with email and password. No verification email is required.'
+                    : 'Sign in with your password, or continue without email to start immediately.'}
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
                   <input
@@ -311,25 +356,24 @@ export default function AuthGate() {
               </form>
             )}
 
-            {enableAnonymousAuth && (
-              <>
-                <div className="flex items-center gap-3">
-                  <div className="h-px flex-1 bg-gray-200" />
-                  <span className="text-xs font-medium text-gray-400">or</span>
-                  <div className="h-px flex-1 bg-gray-200" />
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-200" />
+              <span className="text-xs font-medium text-gray-400">or</span>
+              <div className="h-px flex-1 bg-gray-200" />
+            </div>
 
-                <button
-                  type="button"
-                  onClick={handleAnonymousSignIn}
-                  disabled={isSending}
-                  className="w-full border border-gray-300 hover:bg-gray-50 disabled:opacity-60 text-gray-800 rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2"
-                >
-                  {isSending ? <Loader2 size={18} className="animate-spin" /> : <UserRound size={18} />}
-                  Continue without email
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={handleAnonymousSignIn}
+              disabled={isSending}
+              className="w-full border border-gray-300 hover:bg-gray-50 disabled:opacity-60 text-gray-800 rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2"
+            >
+              {isSending ? <Loader2 size={18} className="animate-spin" /> : <UserRound size={18} />}
+              Continue without email
+            </button>
+            <p className="text-xs text-gray-500 text-center">
+              Guest work is saved in this browser. Sign in later if you need account-based AI access.
+            </p>
           </div>
         )}
       </div>

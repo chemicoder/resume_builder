@@ -37,18 +37,31 @@ Traffic, exports, AI usage, and share links are recorded through Vercel API rout
    - `rb_event_summary`
    - `rb_template_summary`
 
-## Supabase Email Login
+## Supabase Login
 
-Email login uses Supabase magic links. In Supabase Authentication URL Configuration, set:
+The login screen supports three paths:
+
+- Email/password account creation and sign-in.
+- Email magic links as a fallback.
+- Guest mode, which opens the editor immediately and saves the draft in the current browser.
+
+Password account creation uses the `/api/auth` Vercel Function to create a confirmed Supabase Auth user with the server-side service-role key, then the browser signs in with email/password. This avoids blocking users on verification emails.
+
+Required environment variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+For magic links and password reset emails, Supabase still needs the correct Authentication URL Configuration:
 
 - Site URL: `https://resume-builder-softbranes-projects.vercel.app`
 - Redirect URLs: `https://resume-builder-softbranes-projects.vercel.app/**`
 
 After changing these settings, discard old email links and request a new login link.
 
-The login screen also supports email/password sign-in, which avoids magic-link rate limits after the account exists. For password-only account creation without confirmation email, disable email confirmations in Supabase Authentication.
-
-- Email provider with password sign-ins enabled
+In Supabase Authentication, keep the Email provider enabled with password sign-ins enabled. Guest mode does not require Supabase anonymous auth; if anonymous sign-ins are enabled, the app will use them, otherwise it falls back to local guest access.
 
 Anonymous sign-in is disabled in the frontend unless `VITE_ENABLE_ANONYMOUS_AUTH=true` is set. Before enabling it:
 

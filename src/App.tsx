@@ -73,12 +73,23 @@ const TEMPLATE_OPTIONS: { value: TemplateType; label: string; group: string }[] 
   { value: 'midnight', label: 'Midnight', group: 'Creative' },
 ];
 
+const GUEST_SESSION_KEY = 'resume-builder:guest-session';
+
+function hasGuestSession() {
+  try {
+    return window.localStorage.getItem(GUEST_SESSION_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [data, setData] = useState<ResumeData>(initialData);
   const [past, setPast] = useState<ResumeData[]>([]);
   const [future, setFuture] = useState<ResumeData[]>([]);
   const [template, setTemplate] = useState<TemplateType>('minimal');
   const [session, setSession] = useState<Session | null>(null);
+  const [isGuestSession, setIsGuestSession] = useState(hasGuestSession);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   // Preview mode: read-only view shown when someone opens a shared link.
   // No sidebar, prominent "Download PDF" CTA, plus "Edit this resume" to exit.
@@ -210,6 +221,11 @@ export default function App() {
   }, [data, template, previewMode]);
 
   useEffect(() => {
+    if (isGuestSession) {
+      setIsCheckingAuth(false);
+      return;
+    }
+
     if (!supabase) {
       setIsCheckingAuth(false);
       return;
@@ -231,7 +247,7 @@ export default function App() {
     return () => {
       subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [isGuestSession]);
 
   useEffect(() => {
     if (trackedInitialView.current) return;
@@ -243,11 +259,11 @@ export default function App() {
   // user is in editor mode (not viewing someone else's shared resume).
   useEffect(() => {
     if (previewMode || isCheckingAuth) return;
-    if (!session) return;
+    if (!session && !isGuestSession) return;
     if (shouldAutoShowOnboarding()) {
       setShowOnboarding(true);
     }
-  }, [previewMode, isCheckingAuth, session]);
+  }, [previewMode, isCheckingAuth, session, isGuestSession]);
 
   const handleCloseOnboarding = () => {
     setShowOnboarding(false);
@@ -277,8 +293,24 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    try {
+      window.localStorage.removeItem(GUEST_SESSION_KEY);
+    } catch {
+      // Ignore storage errors; signing out should still clear React state.
+    }
+    setIsGuestSession(false);
     await supabase?.auth.signOut();
     setSession(null);
+  };
+
+  const handleContinueAsGuest = () => {
+    try {
+      window.localStorage.setItem(GUEST_SESSION_KEY, 'true');
+    } catch {
+      // The editor still works without persistence of the guest flag.
+    }
+    setIsGuestSession(true);
+    setIsCheckingAuth(false);
   };
 
   // Cap undo history so long editing sessions don't grow memory without bound
@@ -395,8 +427,8 @@ export default function App() {
     );
   }
 
-  if (!isSharedPreview && !session) {
-    return <AuthGate />;
+  if (!isSharedPreview && !session && !isGuestSession) {
+    return <AuthGate onContinueAsGuest={handleContinueAsGuest} />;
   }
 
   if (previewMode) {
@@ -480,6 +512,11 @@ export default function App() {
             {session?.user?.email && (
               <div className="hidden lg:block text-xs text-gray-500 max-w-[180px] truncate mr-2">
                 {session.user.email}
+              </div>
+            )}
+            {!session && isGuestSession && (
+              <div className="hidden lg:block text-xs text-gray-500 max-w-[180px] truncate mr-2">
+                Guest mode
               </div>
             )}
             <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 mr-2">
